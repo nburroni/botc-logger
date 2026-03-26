@@ -1,0 +1,908 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="BotC Log">
+<title>BotC Game Logger</title>
+<style>
+  :root {
+    --bg: #0f0f13;
+    --surface: #1a1a24;
+    --surface-hover: #22222e;
+    --border: #2a2a3a;
+    --text: #e8e8f0;
+    --text-muted: #8888a0;
+    --accent: #6c5ce7;
+    --accent-glow: rgba(108, 92, 231, 0.3);
+    --good: #00b894;
+    --good-bg: rgba(0, 184, 148, 0.15);
+    --evil: #e74c3c;
+    --evil-bg: rgba(231, 76, 60, 0.15);
+    --win: #00b894;
+    --loss: #e74c3c;
+    --radius: 12px;
+    --radius-sm: 8px;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    padding: 0 0 100px 0;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* ——— HEADER ——— */
+  .header {
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--border);
+    backdrop-filter: blur(20px);
+  }
+  .header h1 {
+    font-size: 20px;
+    font-weight: 700;
+    background: linear-gradient(135deg, #a29bfe, #6c5ce7);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    letter-spacing: -0.3px;
+  }
+  .header .subtitle {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-top: 2px;
+  }
+  .connection-dot {
+    display: inline-block;
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--evil);
+    margin-right: 6px;
+    vertical-align: middle;
+    transition: background 0.3s;
+  }
+  .connection-dot.connected { background: var(--good); }
+
+  /* ——— FORM LAYOUT ——— */
+  .form-container {
+    max-width: 480px;
+    margin: 0 auto;
+    padding: 16px;
+  }
+
+  .section {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 16px;
+    margin-bottom: 12px;
+  }
+  .section-title {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--text-muted);
+    margin-bottom: 12px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .section-title .icon { font-size: 14px; }
+
+  .field { margin-bottom: 14px; }
+  .field:last-child { margin-bottom: 0; }
+  .field label {
+    display: block;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-muted);
+    margin-bottom: 6px;
+  }
+
+  /* ——— INPUTS ——— */
+  input[type="text"],
+  input[type="number"],
+  input[type="date"],
+  textarea,
+  select {
+    width: 100%;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--text);
+    font-size: 16px; /* prevents iOS zoom */
+    padding: 12px 14px;
+    outline: none;
+    transition: border-color 0.2s, box-shadow 0.2s;
+    -webkit-appearance: none;
+    appearance: none;
+  }
+  input:focus, textarea:focus, select:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-glow);
+  }
+  select {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%238888a0' d='M6 8L1 3h10z'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 14px center;
+    padding-right: 36px;
+  }
+  textarea {
+    resize: vertical;
+    min-height: 60px;
+    font-family: inherit;
+  }
+
+  .row {
+    display: flex;
+    gap: 10px;
+  }
+  .row > .field { flex: 1; }
+
+  /* ——— AUTOCOMPLETE ——— */
+  .autocomplete-wrapper { position: relative; }
+  .autocomplete-list {
+    position: absolute;
+    top: 100%;
+    left: 0; right: 0;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    max-height: 180px;
+    overflow-y: auto;
+    z-index: 50;
+    display: none;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+  }
+  .autocomplete-list.show { display: block; }
+  .autocomplete-item {
+    padding: 10px 14px;
+    font-size: 15px;
+    cursor: pointer;
+    border-bottom: 1px solid var(--border);
+  }
+  .autocomplete-item:last-child { border-bottom: none; }
+  .autocomplete-item:hover,
+  .autocomplete-item.active {
+    background: var(--surface-hover);
+  }
+
+  /* ——— TOGGLE CHIPS (Good/Evil, W/L) ——— */
+  .chip-group {
+    display: flex;
+    gap: 8px;
+  }
+  .chip {
+    flex: 1;
+    padding: 10px 0;
+    text-align: center;
+    border: 2px solid var(--border);
+    border-radius: var(--radius-sm);
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+    background: var(--bg);
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  .chip:active { transform: scale(0.97); }
+  .chip.good.selected {
+    border-color: var(--good);
+    background: var(--good-bg);
+    color: var(--good);
+  }
+  .chip.evil.selected {
+    border-color: var(--evil);
+    background: var(--evil-bg);
+    color: var(--evil);
+  }
+  .chip.win.selected {
+    border-color: var(--win);
+    background: var(--good-bg);
+    color: var(--win);
+  }
+  .chip.loss.selected {
+    border-color: var(--loss);
+    background: var(--evil-bg);
+    color: var(--loss);
+  }
+
+  /* ——— COLLAPSIBLE MID-GAME SECTION ——— */
+  .collapsible-toggle {
+    width: 100%;
+    background: none;
+    border: 1px dashed var(--border);
+    border-radius: var(--radius-sm);
+    padding: 10px;
+    color: var(--text-muted);
+    font-size: 13px;
+    cursor: pointer;
+    text-align: center;
+    margin-bottom: 14px;
+    transition: all 0.2s;
+  }
+  .collapsible-toggle:hover { border-color: var(--accent); color: var(--accent); }
+  .collapsible-content { display: none; }
+  .collapsible-content.show { display: block; }
+
+  /* ——— SUBMIT BUTTON ——— */
+  .submit-btn {
+    width: 100%;
+    padding: 16px;
+    background: linear-gradient(135deg, #6c5ce7, #a29bfe);
+    border: none;
+    border-radius: var(--radius);
+    color: white;
+    font-size: 17px;
+    font-weight: 700;
+    cursor: pointer;
+    letter-spacing: 0.3px;
+    transition: all 0.2s;
+    position: relative;
+    overflow: hidden;
+  }
+  .submit-btn:active { transform: scale(0.98); }
+  .submit-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    transform: none;
+  }
+  .submit-btn .spinner {
+    display: none;
+    width: 20px; height: 20px;
+    border: 3px solid rgba(255,255,255,0.3);
+    border-top-color: white;
+    border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+    margin: 0 auto;
+  }
+  .submit-btn.loading .btn-text { display: none; }
+  .submit-btn.loading .spinner { display: block; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ——— TOAST ——— */
+  .toast {
+    position: fixed;
+    bottom: 30px;
+    left: 50%;
+    transform: translateX(-50%) translateY(80px);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 14px 24px;
+    font-size: 15px;
+    font-weight: 500;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+    z-index: 200;
+    opacity: 0;
+    transition: all 0.3s ease;
+    pointer-events: none;
+    white-space: nowrap;
+  }
+  .toast.show {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+  .toast.success { border-color: var(--good); color: var(--good); }
+  .toast.error { border-color: var(--evil); color: var(--evil); }
+
+  /* ——— SETUP OVERLAY ——— */
+  .setup-overlay {
+    position: fixed;
+    inset: 0;
+    background: var(--bg);
+    z-index: 300;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+  }
+  .setup-overlay.hidden { display: none; }
+  .setup-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 24px;
+    max-width: 420px;
+    width: 100%;
+  }
+  .setup-card h2 {
+    font-size: 18px;
+    margin-bottom: 8px;
+    color: var(--text);
+  }
+  .setup-card p {
+    font-size: 14px;
+    color: var(--text-muted);
+    margin-bottom: 16px;
+    line-height: 1.5;
+  }
+  .setup-card input {
+    margin-bottom: 14px;
+  }
+  .setup-card button {
+    width: 100%;
+    padding: 14px;
+    background: var(--accent);
+    border: none;
+    border-radius: var(--radius-sm);
+    color: white;
+    font-size: 16px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+
+  /* ——— RECENT GAMES ——— */
+  .recent-badge {
+    display: inline-block;
+    background: var(--accent-glow);
+    color: var(--accent);
+    font-size: 11px;
+    font-weight: 600;
+    padding: 3px 8px;
+    border-radius: 20px;
+    margin-left: 8px;
+  }
+</style>
+</head>
+<body>
+
+<!-- SETUP OVERLAY — shown until user pastes their Apps Script URL -->
+<div class="setup-overlay" id="setupOverlay">
+  <div class="setup-card">
+    <h2>Connect to Your Sheet</h2>
+    <p>Paste your Google Apps Script Web App URL below. You only need to do this once.</p>
+    <input type="text" id="setupUrl" placeholder="https://script.google.com/macros/s/...">
+    <button onclick="saveEndpoint()">Connect</button>
+  </div>
+</div>
+
+<!-- HEADER -->
+<div class="header">
+  <h1>Blood on the Clocktower</h1>
+  <div class="subtitle">
+    <span class="connection-dot" id="connectionDot"></span>
+    <span id="connectionStatus">Not connected</span>
+  </div>
+</div>
+
+<!-- FORM -->
+<div class="form-container">
+  <form id="gameForm" onsubmit="submitGame(event)">
+
+    <!-- GAME INFO -->
+    <div class="section">
+      <div class="section-title"><span class="icon">&#9883;</span> Game Info</div>
+
+      <div class="row">
+        <div class="field">
+          <label>Date</label>
+          <input type="date" id="date" required>
+        </div>
+        <div class="field">
+          <label>Players</label>
+          <input type="number" id="numPlayers" min="5" max="20" placeholder="7-15">
+        </div>
+      </div>
+
+      <div class="field">
+        <label>Event</label>
+        <div class="autocomplete-wrapper">
+          <input type="text" id="event" placeholder="e.g. Metro Vancouver" autocomplete="off">
+          <div class="autocomplete-list" id="event-ac"></div>
+        </div>
+      </div>
+
+      <div class="row">
+        <div class="field">
+          <label>Location</label>
+          <div class="autocomplete-wrapper">
+            <input type="text" id="location" placeholder="e.g. The Vessel" autocomplete="off">
+            <div class="autocomplete-list" id="location-ac"></div>
+          </div>
+        </div>
+        <div class="field">
+          <label>Format</label>
+          <select id="liveOnline">
+            <option value="">—</option>
+            <option value="Live">Live</option>
+            <option value="Online">Online</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="field">
+        <label>Script</label>
+        <div class="autocomplete-wrapper">
+          <input type="text" id="script" placeholder="e.g. Trouble Brewing" autocomplete="off">
+          <div class="autocomplete-list" id="script-ac"></div>
+        </div>
+      </div>
+
+      <div class="field">
+        <label>Storyteller</label>
+        <div class="autocomplete-wrapper">
+          <input type="text" id="storyteller" placeholder="e.g. Derek" autocomplete="off">
+          <div class="autocomplete-list" id="storyteller-ac"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- YOUR ROLE -->
+    <div class="section">
+      <div class="section-title"><span class="icon">&#9816;</span> Your Role</div>
+
+      <div class="field">
+        <label>Starting Role</label>
+        <div class="autocomplete-wrapper">
+          <input type="text" id="startingRole" placeholder="e.g. Washerwoman" autocomplete="off">
+          <div class="autocomplete-list" id="startingRole-ac"></div>
+        </div>
+      </div>
+
+      <div class="field">
+        <label>Starting Team</label>
+        <div class="chip-group">
+          <div class="chip good" data-field="startingTeam" data-value="Good" onclick="selectChip(this)">Good</div>
+          <div class="chip evil" data-field="startingTeam" data-value="Evil" onclick="selectChip(this)">Evil</div>
+        </div>
+        <input type="hidden" id="startingTeam">
+      </div>
+
+      <!-- COLLAPSIBLE: Mid-game role change -->
+      <button type="button" class="collapsible-toggle" id="midGameToggle" onclick="toggleMidGame()">
+        + Role changed mid-game
+      </button>
+      <div class="collapsible-content" id="midGameContent">
+        <div class="field">
+          <label>Mid Game Role</label>
+          <div class="autocomplete-wrapper">
+            <input type="text" id="midGameRole" placeholder="e.g. Drunk" autocomplete="off">
+            <div class="autocomplete-list" id="midGameRole-ac"></div>
+          </div>
+        </div>
+        <div class="field">
+          <label>Mid Game Team</label>
+          <div class="chip-group">
+            <div class="chip good" data-field="midGameTeam" data-value="Good" onclick="selectChip(this)">Good</div>
+            <div class="chip evil" data-field="midGameTeam" data-value="Evil" onclick="selectChip(this)">Evil</div>
+          </div>
+          <input type="hidden" id="midGameTeam">
+        </div>
+        <div class="field">
+          <label>Ending Role</label>
+          <div class="autocomplete-wrapper">
+            <input type="text" id="endingRole" placeholder="Same or different" autocomplete="off">
+            <div class="autocomplete-list" id="endingRole-ac"></div>
+          </div>
+        </div>
+        <div class="field">
+          <label>Ending Team</label>
+          <div class="chip-group">
+            <div class="chip good" data-field="endingTeam" data-value="Good" onclick="selectChip(this)">Good</div>
+            <div class="chip evil" data-field="endingTeam" data-value="Evil" onclick="selectChip(this)">Evil</div>
+          </div>
+          <input type="hidden" id="endingTeam">
+        </div>
+      </div>
+    </div>
+
+    <!-- DEMONS -->
+    <div class="section">
+      <div class="section-title"><span class="icon">&#128520;</span> Demon Info</div>
+      <div class="row">
+        <div class="field">
+          <label>Start Demon</label>
+          <div class="autocomplete-wrapper">
+            <input type="text" id="startDemon" placeholder="e.g. Imp" autocomplete="off">
+            <div class="autocomplete-list" id="startDemon-ac"></div>
+          </div>
+        </div>
+        <div class="field">
+          <label>End Demon</label>
+          <div class="autocomplete-wrapper">
+            <input type="text" id="endDemon" placeholder="e.g. Imp" autocomplete="off">
+            <div class="autocomplete-list" id="endDemon-ac"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- OUTCOME -->
+    <div class="section">
+      <div class="section-title"><span class="icon">&#127942;</span> Outcome</div>
+
+      <div class="row">
+        <div class="field">
+          <label>Winning Team</label>
+          <div class="chip-group">
+            <div class="chip good" data-field="winningTeam" data-value="Good" onclick="selectChip(this)">Good</div>
+            <div class="chip evil" data-field="winningTeam" data-value="Evil" onclick="selectChip(this)">Evil</div>
+          </div>
+          <input type="hidden" id="winningTeam">
+        </div>
+        <div class="field">
+          <label>Result</label>
+          <div class="chip-group">
+            <div class="chip win" data-field="winLoss" data-value="W" onclick="selectChip(this)">W</div>
+            <div class="chip loss" data-field="winLoss" data-value="L" onclick="selectChip(this)">L</div>
+          </div>
+          <input type="hidden" id="winLoss">
+        </div>
+      </div>
+
+      <div class="field">
+        <label>Last Night (final night #)</label>
+        <input type="number" id="lastNight" min="1" max="20" placeholder="e.g. 4">
+      </div>
+    </div>
+
+    <!-- FABLED & LORIC (collapsible) -->
+    <div class="section">
+      <div class="section-title"><span class="icon">&#9734;</span> Fabled &amp; Loric</div>
+
+      <button type="button" class="collapsible-toggle" id="fabledToggle" onclick="toggleFabled()">
+        + Add Fabled / Loric characters
+      </button>
+      <div class="collapsible-content" id="fabledContent">
+        <div class="field">
+          <label>Fabled 1</label>
+          <div class="autocomplete-wrapper">
+            <input type="text" id="fabled1" placeholder="e.g. Spirit of Ivory" autocomplete="off">
+            <div class="autocomplete-list" id="fabled1-ac"></div>
+          </div>
+        </div>
+        <div class="row">
+          <div class="field">
+            <label>Fabled 2</label>
+            <div class="autocomplete-wrapper">
+              <input type="text" id="fabled2" autocomplete="off">
+              <div class="autocomplete-list" id="fabled2-ac"></div>
+            </div>
+          </div>
+          <div class="field">
+            <label>Fabled 3</label>
+            <div class="autocomplete-wrapper">
+              <input type="text" id="fabled3" autocomplete="off">
+              <div class="autocomplete-list" id="fabled3-ac"></div>
+            </div>
+          </div>
+        </div>
+        <div class="field">
+          <label>Fabled Notes</label>
+          <textarea id="fabledNotes" placeholder="Notes about fabled characters"></textarea>
+        </div>
+        <div class="row">
+          <div class="field">
+            <label>Loric 1</label>
+            <div class="autocomplete-wrapper">
+              <input type="text" id="loric1" autocomplete="off">
+              <div class="autocomplete-list" id="loric1-ac"></div>
+            </div>
+          </div>
+          <div class="field">
+            <label>Loric 2</label>
+            <div class="autocomplete-wrapper">
+              <input type="text" id="loric2" autocomplete="off">
+              <div class="autocomplete-list" id="loric2-ac"></div>
+            </div>
+          </div>
+        </div>
+        <div class="field">
+          <label>Loric Notes</label>
+          <textarea id="loricNotes" placeholder="Notes about loric characters"></textarea>
+        </div>
+      </div>
+    </div>
+
+    <!-- NOTES -->
+    <div class="section">
+      <div class="section-title"><span class="icon">&#128221;</span> Notes</div>
+
+      <div class="field">
+        <label>Role Notes</label>
+        <textarea id="roleNotes" placeholder="e.g. Learned Saint, Snake charmed the demon on night 1"></textarea>
+      </div>
+
+      <div class="field">
+        <label>Lived / Died / Executed / Exiled</label>
+        <textarea id="livedDiedNotes" placeholder="e.g. Executed day 2, died night 3"></textarea>
+      </div>
+    </div>
+
+    <!-- SUBMIT -->
+    <button type="submit" class="submit-btn" id="submitBtn">
+      <span class="btn-text">Log Game</span>
+      <div class="spinner"></div>
+    </button>
+
+  </form>
+</div>
+
+<!-- TOAST -->
+<div class="toast" id="toast"></div>
+
+<script>
+  // ——— CONFIG ———
+  const STORAGE_KEY = "botc_logger_endpoint";
+  let ENDPOINT = "";
+  let OPTIONS = { events: [], locations: [], scripts: [], storytellers: [], roles: [], demons: [], fabled: [], lorics: [] };
+
+  // ——— INIT ———
+  document.addEventListener("DOMContentLoaded", () => {
+    // Set default date to today
+    document.getElementById("date").valueAsDate = new Date();
+
+    // Check for saved endpoint
+    const saved = getSavedEndpoint();
+    if (saved) {
+      ENDPOINT = saved;
+      document.getElementById("setupOverlay").classList.add("hidden");
+      loadOptions();
+    }
+
+    // Setup autocomplete listeners
+    setupAutocomplete("event", () => OPTIONS.events);
+    setupAutocomplete("location", () => OPTIONS.locations);
+    setupAutocomplete("script", () => OPTIONS.scripts);
+    setupAutocomplete("storyteller", () => OPTIONS.storytellers);
+    setupAutocomplete("startingRole", () => OPTIONS.roles);
+    setupAutocomplete("midGameRole", () => OPTIONS.roles);
+    setupAutocomplete("endingRole", () => OPTIONS.roles);
+    setupAutocomplete("startDemon", () => OPTIONS.demons);
+    setupAutocomplete("endDemon", () => OPTIONS.demons);
+    setupAutocomplete("fabled1", () => OPTIONS.fabled);
+    setupAutocomplete("fabled2", () => OPTIONS.fabled);
+    setupAutocomplete("fabled3", () => OPTIONS.fabled);
+    setupAutocomplete("loric1", () => OPTIONS.lorics);
+    setupAutocomplete("loric2", () => OPTIONS.lorics);
+
+    // Close autocomplete on outside click
+    document.addEventListener("click", (e) => {
+      if (!e.target.closest(".autocomplete-wrapper")) {
+        document.querySelectorAll(".autocomplete-list").forEach(l => l.classList.remove("show"));
+      }
+    });
+  });
+
+  // ——— ENDPOINT / SETUP ———
+  function getSavedEndpoint() {
+    try {
+      // Use a cookie since localStorage may not be available
+      const match = document.cookie.match(new RegExp("(^| )" + STORAGE_KEY + "=([^;]+)"));
+      return match ? decodeURIComponent(match[2]) : null;
+    } catch(e) {
+      return null;
+    }
+  }
+
+  function setSavedEndpoint(url) {
+    try {
+      // Set cookie that expires in 10 years
+      const expires = new Date(Date.now() + 10 * 365 * 24 * 60 * 60 * 1000).toUTCString();
+      document.cookie = STORAGE_KEY + "=" + encodeURIComponent(url) + ";expires=" + expires + ";path=/;SameSite=Strict";
+    } catch(e) {}
+  }
+
+  function saveEndpoint() {
+    const url = document.getElementById("setupUrl").value.trim();
+    if (!url.startsWith("https://script.google.com/")) {
+      showToast("Please paste a valid Apps Script URL", "error");
+      return;
+    }
+    ENDPOINT = url;
+    setSavedEndpoint(url);
+    document.getElementById("setupOverlay").classList.add("hidden");
+    loadOptions();
+  }
+
+  // ——— LOAD OPTIONS FROM SHEET ———
+  async function loadOptions() {
+    setConnected(false, "Connecting...");
+    try {
+      const res = await fetch(ENDPOINT);
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+      OPTIONS = data.options;
+      setConnected(true, "Connected to sheet");
+    } catch (err) {
+      setConnected(false, "Connection failed");
+      console.error("Load options error:", err);
+    }
+  }
+
+  function setConnected(ok, msg) {
+    document.getElementById("connectionDot").classList.toggle("connected", ok);
+    document.getElementById("connectionStatus").textContent = msg;
+  }
+
+  // ——— AUTOCOMPLETE ———
+  function setupAutocomplete(fieldId, optionsFn) {
+    const input = document.getElementById(fieldId);
+    const list = document.getElementById(fieldId + "-ac");
+
+    input.addEventListener("focus", () => showSuggestions(input, list, optionsFn));
+    input.addEventListener("input", () => showSuggestions(input, list, optionsFn));
+  }
+
+  function showSuggestions(input, list, optionsFn) {
+    const val = input.value.toLowerCase().trim();
+    const opts = optionsFn();
+    const filtered = val
+      ? opts.filter(o => o.toLowerCase().includes(val))
+      : opts.slice(0, 15); // show top 15 on focus
+
+    if (filtered.length === 0) {
+      list.classList.remove("show");
+      return;
+    }
+
+    list.innerHTML = filtered.map(o =>
+      `<div class="autocomplete-item" onmousedown="selectAC(this, '${input.id}')">${escHtml(o)}</div>`
+    ).join("");
+    list.classList.add("show");
+  }
+
+  function selectAC(el, fieldId) {
+    document.getElementById(fieldId).value = el.textContent;
+    el.closest(".autocomplete-list").classList.remove("show");
+  }
+
+  function escHtml(s) {
+    return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g, "&#039;");
+  }
+
+  // ——— CHIP SELECT ———
+  function selectChip(el) {
+    const field = el.dataset.field;
+    const value = el.dataset.value;
+    // Deselect siblings
+    el.parentElement.querySelectorAll(".chip").forEach(c => c.classList.remove("selected"));
+    // Toggle
+    const hidden = document.getElementById(field);
+    if (hidden.value === value) {
+      hidden.value = "";
+    } else {
+      el.classList.add("selected");
+      hidden.value = value;
+    }
+    // Auto-set W/L when possible
+    autoSetWinLoss();
+  }
+
+  function autoSetWinLoss() {
+    const startTeam = document.getElementById("startingTeam").value;
+    const endTeam = document.getElementById("endingTeam").value;
+    const winTeam = document.getElementById("winningTeam").value;
+    const myTeam = endTeam || startTeam;
+    if (myTeam && winTeam) {
+      const result = myTeam === winTeam ? "W" : "L";
+      document.getElementById("winLoss").value = result;
+      document.querySelectorAll('[data-field="winLoss"]').forEach(c => {
+        c.classList.toggle("selected", c.dataset.value === result);
+      });
+    }
+  }
+
+  // ——— MID GAME TOGGLE ———
+  function toggleMidGame() {
+    const content = document.getElementById("midGameContent");
+    const toggle = document.getElementById("midGameToggle");
+    const show = !content.classList.contains("show");
+    content.classList.toggle("show", show);
+    toggle.textContent = show ? "− Hide mid-game role change" : "+ Role changed mid-game";
+  }
+
+  // ——— FABLED TOGGLE ———
+  function toggleFabled() {
+    const content = document.getElementById("fabledContent");
+    const toggle = document.getElementById("fabledToggle");
+    const show = !content.classList.contains("show");
+    content.classList.toggle("show", show);
+    toggle.textContent = show ? "− Hide Fabled / Loric" : "+ Add Fabled / Loric characters";
+  }
+
+  // ——— SUBMIT ———
+  async function submitGame(e) {
+    e.preventDefault();
+    const btn = document.getElementById("submitBtn");
+    btn.classList.add("loading");
+    btn.disabled = true;
+
+    const payload = {
+      date:           document.getElementById("date").value,
+      event:          document.getElementById("event").value.trim(),
+      location:       document.getElementById("location").value.trim(),
+      liveOnline:     document.getElementById("liveOnline").value,
+      script:         document.getElementById("script").value.trim(),
+      storyteller:    document.getElementById("storyteller").value.trim(),
+      numPlayers:     document.getElementById("numPlayers").value,
+      startingRole:   document.getElementById("startingRole").value.trim(),
+      startingTeam:   document.getElementById("startingTeam").value,
+      midGameRole:    document.getElementById("midGameRole").value.trim(),
+      midGameTeam:    document.getElementById("midGameTeam").value,
+      endingRole:     document.getElementById("endingRole").value.trim(),
+      endingTeam:     document.getElementById("endingTeam").value,
+      roleNotes:      document.getElementById("roleNotes").value.trim(),
+      livedDiedNotes: document.getElementById("livedDiedNotes").value.trim(),
+      startDemon:     document.getElementById("startDemon").value.trim(),
+      endDemon:       document.getElementById("endDemon").value.trim(),
+      winningTeam:    document.getElementById("winningTeam").value,
+      winLoss:        document.getElementById("winLoss").value,
+      lastNight:      document.getElementById("lastNight").value,
+      fabled1:        document.getElementById("fabled1").value.trim(),
+      fabled2:        document.getElementById("fabled2").value.trim(),
+      fabled3:        document.getElementById("fabled3").value.trim(),
+      fabledNotes:    document.getElementById("fabledNotes").value.trim(),
+      loric1:         document.getElementById("loric1").value.trim(),
+      loric2:         document.getElementById("loric2").value.trim(),
+      loricNotes:     document.getElementById("loricNotes").value.trim()
+    };
+
+    try {
+      const res = await fetch(ENDPOINT, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+        mode: "no-cors" // Apps Script doesn't support CORS preflight
+      });
+
+      // no-cors means we can't read the response, but the request went through
+      showToast("Game logged!", "success");
+      resetFormForNextGame();
+      // Refresh options to include new entries
+      loadOptions();
+    } catch (err) {
+      showToast("Failed to log: " + err.message, "error");
+    } finally {
+      btn.classList.remove("loading");
+      btn.disabled = false;
+    }
+  }
+
+  function resetFormForNextGame() {
+    // Keep: date, event, location, live/online, script, storyteller, numPlayers
+    // (since you likely play multiple games in a session)
+    // Clear: everything role-related
+    ["startingRole", "midGameRole", "endingRole", "roleNotes",
+     "livedDiedNotes", "startDemon", "endDemon", "lastNight",
+     "fabled1", "fabled2", "fabled3", "fabledNotes",
+     "loric1", "loric2", "loricNotes"].forEach(id => {
+      document.getElementById(id).value = "";
+    });
+    ["startingTeam", "midGameTeam", "endingTeam", "winningTeam", "winLoss"].forEach(id => {
+      document.getElementById(id).value = "";
+    });
+    document.querySelectorAll(".chip").forEach(c => c.classList.remove("selected"));
+
+    // Collapse mid-game and fabled sections
+    document.getElementById("midGameContent").classList.remove("show");
+    document.getElementById("midGameToggle").textContent = "+ Role changed mid-game";
+    document.getElementById("fabledContent").classList.remove("show");
+    document.getElementById("fabledToggle").textContent = "+ Add Fabled / Loric characters";
+
+    // Scroll to top
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  // ——— TOAST ———
+  function showToast(msg, type) {
+    const t = document.getElementById("toast");
+    t.textContent = msg;
+    t.className = "toast " + type + " show";
+    setTimeout(() => t.classList.remove("show"), 3000);
+  }
+</script>
+</body>
+</html>
