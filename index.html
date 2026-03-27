@@ -581,19 +581,32 @@
     loadOptions();
   }
 
-  // ——— LOAD DYNAMIC OPTIONS ———
-  async function loadOptions() {
+  // ——— LOAD DYNAMIC OPTIONS (JSONP to bypass CORS) ———
+  function loadOptions() {
     setConnected(false, "Connecting...");
-    try {
-      const res = await fetch(ENDPOINT + "?auth=" + encodeURIComponent(AUTH_HASH));
-      const data = await res.json();
-      if (data.error) throw new Error(data.error);
+    // Use JSONP: inject a <script> tag that calls our global callback
+    const cbName = "_botcCallback_" + Date.now();
+    const script = document.createElement("script");
+    script.src = ENDPOINT + "?auth=" + encodeURIComponent(AUTH_HASH) + "&callback=" + cbName;
+
+    window[cbName] = function(data) {
+      delete window[cbName];
+      script.remove();
+      if (data.error) {
+        setConnected(false, data.error === "Unauthorized" ? "Wrong password" : data.error);
+        return;
+      }
       DYNAMIC = data.options;
       setConnected(true, "Connected to sheet");
-    } catch (err) {
+    };
+
+    script.onerror = function() {
+      delete window[cbName];
+      script.remove();
       setConnected(false, "Offline — using built-in lists");
-      console.error("Load options error:", err);
-    }
+    };
+
+    document.body.appendChild(script);
   }
 
   function setConnected(ok, msg) {
