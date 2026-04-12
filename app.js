@@ -152,17 +152,13 @@ async function saveEndpoint() {
   loadOptions();
 }
 
-// ——— LOAD DYNAMIC OPTIONS (JSONP to bypass CORS) ———
-function loadOptions() {
+// ——— LOAD DYNAMIC OPTIONS ———
+async function loadOptions() {
   setConnected(false, "Connecting...");
-  // Use JSONP: inject a <script> tag that calls our global callback
-  const cbName = "_botcCallback_" + Date.now();
-  const script = document.createElement("script");
-  script.src = ENDPOINT + "?key=" + encodeURIComponent(AUTH_HASH) + "&callback=" + cbName;
-
-  window[cbName] = function(data) {
-    delete window[cbName];
-    script.remove();
+  try {
+    const url = ENDPOINT + "?key=" + encodeURIComponent(AUTH_HASH);
+    const resp = await fetch(url, { redirect: "follow" });
+    const data = await resp.json();
     if (data.error) {
       if (data.error === "Unauthorized") {
         clearSession("Wrong password — please re-enter");
@@ -173,15 +169,9 @@ function loadOptions() {
     }
     DYNAMIC = data.options;
     setConnected(true, "Connected to sheet");
-  };
-
-  script.onerror = function() {
-    delete window[cbName];
-    script.remove();
+  } catch (err) {
     setConnected(false, "Offline — using built-in lists");
-  };
-
-  document.body.appendChild(script);
+  }
 }
 
 function setConnected(ok, msg) {
@@ -323,11 +313,16 @@ async function submitGame(e) {
     const resp = await fetch(ENDPOINT, {
       method: "POST",
       body: JSON.stringify(payload),
-      mode: "no-cors"
+      redirect: "follow"
     });
-    showToast("Game logged!", "success");
-    resetFormForNextGame();
-    loadOptions();
+    const result = await resp.json();
+    if (result.error) {
+      showToast("Error: " + result.error, "error");
+    } else {
+      showToast("Game logged! (row " + result.row + ")", "success");
+      resetFormForNextGame();
+      loadOptions();
+    }
   } catch (err) {
     showToast("Failed to log: " + err.message, "error");
   } finally {
