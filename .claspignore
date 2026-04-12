@@ -1,0 +1,14 @@
+# Push only Code.gs and appsscript.json to Apps Script.
+# Everything else is frontend / repo tooling.
+**/*.js
+**/*.css
+**/*.html
+**/*.webp
+**/*.md
+.env
+.clasp.json
+.claspignore
+.gitignore
+.git/**
+.claude/**
+Makefile
