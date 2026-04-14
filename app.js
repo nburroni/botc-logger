@@ -44,6 +44,8 @@ const ALL_LORICS = [
 // ——— CONFIG ———
 const STORAGE_KEY = "botc_logger_endpoint";
 const AUTH_KEY = "botc_logger_auth";
+const GAME_INFO_KEY = "botc_logger_game_info";
+const GAME_INFO_FIELDS = ["event","location","liveOnline","script","storyteller","numPlayers"];
 let ENDPOINT = "";
 let AUTH_HASH = "";
 // Dynamic options from sheet (merged with static on load)
@@ -60,6 +62,7 @@ document.addEventListener("DOMContentLoaded", () => {
     document.getElementById("setupOverlay").classList.add("hidden");
     loadOptions();
   }
+  restoreGameInfo();
 
   // Autocomplete bindings — merge static + dynamic
   setupAutocomplete("event",        () => DYNAMIC.events);
@@ -296,7 +299,7 @@ async function submitGame(e) {
     roleNotes:      document.getElementById("roleNotes").value.trim(),
     livedDiedNotes: document.getElementById("livedDiedNotes").value.trim(),
     startDemon:     document.getElementById("startDemon").value.trim(),
-    endDemon:       document.getElementById("endDemon").value.trim(),
+    endDemon:       document.getElementById("endDemon").value.trim() || document.getElementById("startDemon").value.trim(),
     winningTeam:    document.getElementById("winningTeam").value,
     winLoss:        document.getElementById("winLoss").value,
     lastNight:      document.getElementById("lastNight").value,
@@ -320,6 +323,7 @@ async function submitGame(e) {
       showToast("Error: " + result.error, "error");
     } else {
       showToast("Game logged! (row " + result.row + ")", "success");
+      saveGameInfo();
       resetFormForNextGame();
       loadOptions();
     }
@@ -345,6 +349,30 @@ function resetFormForNextGame() {
   document.getElementById("fabledContent").classList.remove("show");
   document.getElementById("fabledToggle").textContent = "+ Add Fabled / Loric characters";
   window.scrollTo({ top: 0, behavior: "smooth" });
+}
+
+// ——— GAME INFO PERSISTENCE ———
+// Cross-session: remember event/location/format/script/storyteller/numPlayers
+// between browser sessions so the user doesn't re-enter them every game night.
+function saveGameInfo() {
+  const data = {};
+  GAME_INFO_FIELDS.forEach(id => {
+    data[id] = document.getElementById(id).value;
+  });
+  try { localStorage.setItem(GAME_INFO_KEY, JSON.stringify(data)); } catch (_) {}
+}
+
+function restoreGameInfo() {
+  let raw;
+  try { raw = localStorage.getItem(GAME_INFO_KEY); } catch (_) { return; }
+  if (!raw) return;
+  let data;
+  try { data = JSON.parse(raw); } catch (_) { return; }
+  GAME_INFO_FIELDS.forEach(id => {
+    if (data[id] == null) return;
+    const el = document.getElementById(id);
+    if (el && !el.value) el.value = data[id];
+  });
 }
 
 function showToast(msg, type) {

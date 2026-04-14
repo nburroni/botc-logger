@@ -190,8 +190,12 @@
         </div>
       </div>
       <div class="field">
-        <label>Last Night (final night #)</label>
-        <input type="number" id="lastNight" min="1" max="20" placeholder="e.g. 4">
+        <label>Last Night</label>
+        <div class="chip-group">
+          <div class="chip win" data-field="lastNight" data-value="Y" onclick="selectChip(this)">Y</div>
+          <div class="chip loss" data-field="lastNight" data-value="N" onclick="selectChip(this)">N</div>
+        </div>
+        <input type="hidden" id="lastNight">
       </div>
     </div>
 
