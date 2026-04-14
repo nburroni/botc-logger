@@ -122,6 +122,18 @@ textarea { resize: vertical; min-height: 60px; font-family: inherit; }
 .chip.win.selected { border-color: var(--win); background: var(--good-bg); color: var(--win); }
 .chip.loss.selected { border-color: var(--loss); background: var(--evil-bg); color: var(--loss); }
 
+/* PREFILL */
+.prefill-btn {
+  width: 100%; background: none; border: 1px dashed var(--border);
+  border-radius: var(--radius-sm); padding: 10px 12px; color: var(--text);
+  font: inherit; cursor: pointer; text-align: left; margin-bottom: 14px;
+  transition: all 0.2s; display: flex; flex-direction: column; gap: 4px;
+}
+.prefill-btn:hover { border-color: var(--accent); background: var(--surface-hover); }
+.prefill-btn.hidden { display: none; }
+.prefill-label { font-size: 13px; color: var(--accent); font-weight: 600; }
+.prefill-preview { font-size: 12px; color: var(--text-muted); line-height: 1.4; word-break: break-word; }
+
 /* COLLAPSIBLE */
 .collapsible-toggle {
   width: 100%; background: none; border: 1px dashed var(--border);

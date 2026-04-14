@@ -152,7 +152,7 @@ function doPost(e) {
     row[COL.END_DEMON - 1]      = body.endDemon || "";
     row[COL.WINNING_TEAM - 1]   = body.winningTeam || "";
     row[COL.WIN_LOSS - 1]       = body.winLoss || "";
-    row[COL.LAST_NIGHT - 1]     = body.lastNight ? parseInt(body.lastNight) : "";
+    row[COL.LAST_NIGHT - 1]     = body.lastNight || "";
     row[COL.FABLED_1 - 1]       = body.fabled1 || "";
     row[COL.FABLED_2 - 1]       = body.fabled2 || "";
     row[COL.FABLED_3 - 1]       = body.fabled3 || "";
