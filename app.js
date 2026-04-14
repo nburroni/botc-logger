@@ -62,7 +62,7 @@ document.addEventListener("DOMContentLoaded", () => {
     document.getElementById("setupOverlay").classList.add("hidden");
     loadOptions();
   }
-  restoreGameInfo();
+  refreshPrefillButton();
 
   // Autocomplete bindings — merge static + dynamic
   setupAutocomplete("event",        () => DYNAMIC.events);
@@ -325,6 +325,7 @@ async function submitGame(e) {
       showToast("Game logged! (row " + result.row + ")", "success");
       saveGameInfo();
       resetFormForNextGame();
+      refreshPrefillButton();
       loadOptions();
     }
   } catch (err) {
@@ -352,8 +353,14 @@ function resetFormForNextGame() {
 }
 
 // ——— GAME INFO PERSISTENCE ———
-// Cross-session: remember event/location/format/script/storyteller/numPlayers
-// between browser sessions so the user doesn't re-enter them every game night.
+// Remember event/location/format/script/storyteller/numPlayers from the last
+// submitted game so the user can prefill the next one with a single tap —
+// useful when playing several games back-to-back at the same venue.
+const PREFILL_LABELS = {
+  event: "Event", location: "Location", liveOnline: "Format",
+  script: "Script", storyteller: "ST", numPlayers: "Players"
+};
+
 function saveGameInfo() {
   const data = {};
   GAME_INFO_FIELDS.forEach(id => {
@@ -362,17 +369,41 @@ function saveGameInfo() {
   try { localStorage.setItem(GAME_INFO_KEY, JSON.stringify(data)); } catch (_) {}
 }
 
-function restoreGameInfo() {
+function readLastGameInfo() {
   let raw;
-  try { raw = localStorage.getItem(GAME_INFO_KEY); } catch (_) { return; }
-  if (!raw) return;
-  let data;
-  try { data = JSON.parse(raw); } catch (_) { return; }
+  try { raw = localStorage.getItem(GAME_INFO_KEY); } catch (_) { return null; }
+  if (!raw) return null;
+  try { return JSON.parse(raw); } catch (_) { return null; }
+}
+
+// Shows the prefill button if there's saved data, with a preview of the
+// values baked into the button label so the user can see what they'll get
+// before tapping.
+function refreshPrefillButton() {
+  const btn = document.getElementById("prefillBtn");
+  const preview = document.getElementById("prefillPreview");
+  const data = readLastGameInfo();
+  const parts = data
+    ? GAME_INFO_FIELDS
+        .filter(id => data[id])
+        .map(id => PREFILL_LABELS[id] + ": " + data[id])
+    : [];
+  if (!parts.length) {
+    btn.classList.add("hidden");
+    preview.textContent = "";
+    return;
+  }
+  preview.textContent = parts.join(" · ");
+  btn.classList.remove("hidden");
+}
+
+function applyPrefill() {
+  const data = readLastGameInfo();
+  if (!data) return;
   GAME_INFO_FIELDS.forEach(id => {
-    if (data[id] == null) return;
-    const el = document.getElementById(id);
-    if (el && !el.value) el.value = data[id];
+    if (data[id] != null) document.getElementById(id).value = data[id];
   });
+  document.getElementById("prefillBtn").classList.add("hidden");
 }
 
 function showToast(msg, type) {
