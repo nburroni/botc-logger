@@ -174,7 +174,7 @@ textarea { resize: vertical; min-height: 60px; font-family: inherit; }
 .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); pointer-events: auto; }
 .toast.success { border-color: var(--good); color: var(--good); }
 .toast.error { border-color: var(--evil); color: var(--evil); }
-.toast.info { background: var(--accent); color: white; }
+.toast.info { background: var(--accent); border-color: var(--accent); color: white; }
 
 /* SETUP */
 .setup-overlay {

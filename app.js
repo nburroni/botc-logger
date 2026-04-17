@@ -406,6 +406,7 @@ function applyPrefill() {
   document.getElementById("prefillBtn").classList.add("hidden");
 }
 
+let _toastTimer = null;
 function showToast(msg, type, opts) {
   const t = document.getElementById("toast");
   t.textContent = msg;
@@ -417,7 +418,7 @@ function showToast(msg, type, opts) {
   } else {
     t.style.cursor = "";
   }
-  clearTimeout(t._timeout);
-  t._timeout = setTimeout(() => t.classList.remove("show"), opts && opts.sticky ? 10000 : 3000);
+  clearTimeout(_toastTimer);
+  _toastTimer = setTimeout(() => t.classList.remove("show"), opts && opts.sticky ? 10000 : 3000);
 }
 window.showToast = showToast;
