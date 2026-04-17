@@ -147,6 +147,130 @@ function queueNewEntry(payload) {
 function getPending() { return queueRead(QUEUE_PENDING_KEY); }
 function getFailed()  { return queueRead(QUEUE_FAILED_KEY); }
 
+// Tries one fetch against the Apps Script endpoint. Returns a normalized
+// result object: { ok, authError, userError, row, err }.
+async function queueAttempt(payload) {
+  try {
+    const resp = await fetch(ENDPOINT, {
+      method: "POST",
+      body: JSON.stringify(payload),
+      redirect: "follow",
+    });
+    const body = await resp.json();
+    if (body.error === "Unauthorized") {
+      return { ok: false, authError: true, err: "Unauthorized" };
+    }
+    if (body.error) {
+      return { ok: false, userError: true, err: body.error };
+    }
+    return { ok: true, row: body.row };
+  } catch (err) {
+    return { ok: false, networkError: true, err: String(err) };
+  }
+}
+
+// Public API: try once if online; enqueue otherwise.
+// Returns one of:
+//   { synced: true, row }
+//   { queued: true }
+//   { synced: false, authError: true, err }     // caller should clearSession
+async function submitViaQueue(payload) {
+  if (!navigator.onLine) {
+    const entry = queueNewEntry(payload);
+    queueWrite(QUEUE_PENDING_KEY, [...getPending(), entry]);
+    maybeStartInterval();
+    return { queued: true };
+  }
+  const result = await queueAttempt(payload);
+  if (result.ok) {
+    // Opportunistic drain: we have a working connection.
+    drainQueue();
+    return { synced: true, row: result.row };
+  }
+  if (result.authError) {
+    return { synced: false, authError: true, err: result.err };
+  }
+  // userError or networkError → enqueue with the error annotated.
+  const entry = queueNewEntry(payload);
+  entry.attempts = 1;
+  entry.lastError = result.err;
+  queueWrite(QUEUE_PENDING_KEY, [...getPending(), entry]);
+  maybeStartInterval();
+  return { queued: true };
+}
+
+let _isDraining = false;
+let _pendingRerun = false;
+
+// Processes the pending bucket FIFO. Auth failures stop the drain; other
+// errors move the entry to failed and continue. Network/5xx leaves the
+// entry in place, increments attempts, and stops the drain so we don't
+// hammer a flaky connection.
+async function drainQueue() {
+  if (_isDraining) { _pendingRerun = true; return; }
+  _isDraining = true;
+  try {
+    let synced = 0;
+    while (true) {
+      const pending = getPending();
+      if (pending.length === 0) break;
+      const entry = pending[0];
+      const result = await queueAttempt(entry.payload);
+
+      if (result.ok) {
+        queueWrite(QUEUE_PENDING_KEY, pending.slice(1));
+        synced++;
+        continue;
+      }
+      if (result.authError) {
+        const updated = { ...entry, attempts: entry.attempts + 1, lastError: result.err };
+        queueWrite(QUEUE_PENDING_KEY, pending.slice(1));
+        queueWrite(QUEUE_FAILED_KEY, [...getFailed(), updated]);
+        break; // stop draining; other entries likely fail the same way.
+      }
+      if (result.userError) {
+        const updated = { ...entry, attempts: entry.attempts + 1, lastError: result.err };
+        queueWrite(QUEUE_PENDING_KEY, pending.slice(1));
+        queueWrite(QUEUE_FAILED_KEY, [...getFailed(), updated]);
+        continue; // isolated data problem; keep going.
+      }
+      // networkError → leave in place, annotate, stop.
+      const updated = { ...entry, attempts: entry.attempts + 1, lastError: result.err };
+      queueWrite(QUEUE_PENDING_KEY, [updated, ...pending.slice(1)]);
+      break;
+    }
+    if (synced > 0) showToast(`Synced ${synced} game${synced === 1 ? "" : "s"}`, "success");
+    maybeStartInterval();
+  } finally {
+    _isDraining = false;
+    if (_pendingRerun) {
+      _pendingRerun = false;
+      drainQueue();
+    }
+  }
+}
+
+function retryQueued(id, bucket) {
+  const fromKey = bucket === "failed" ? QUEUE_FAILED_KEY : QUEUE_PENDING_KEY;
+  const list = queueRead(fromKey);
+  const idx = list.findIndex((e) => e.id === id);
+  if (idx === -1) return;
+  const [entry] = list.splice(idx, 1);
+  queueWrite(fromKey, list);
+  queueWrite(QUEUE_PENDING_KEY, [...getPending(), { ...entry, attempts: entry.attempts, lastError: null }]);
+  drainQueue();
+}
+
+function deleteQueued(id, bucket) {
+  const key = bucket === "failed" ? QUEUE_FAILED_KEY : QUEUE_PENDING_KEY;
+  const list = queueRead(key);
+  const next = list.filter((e) => e.id !== id);
+  if (next.length !== list.length) queueWrite(key, next);
+}
+
+// Filled in Chunk 3 (triggers). Stub for now so submitViaQueue compiles.
+function maybeStartInterval() { /* see Chunk 3 */ }
+
 // ——— SESSION ———
 // Clears stored credentials and returns the user to the setup screen.
 // Called on auth failure AND from the manual reset button in the header.
