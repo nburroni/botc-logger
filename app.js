@@ -104,6 +104,47 @@ function deleteCookie(name) {
   document.cookie = name+"=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/;SameSite=Strict";
 }
 
+// ——— QUEUE (OFFLINE SUBMIT) ———
+// Owns the two localStorage buckets. Nothing else in app.js writes to these
+// keys — the queue module is the sole writer. Reads go through getPending /
+// getFailed. State changes are published via a window "botc:queue-changed"
+// event so the queue-ui module can re-render without tight coupling.
+//
+// INVARIANT: clearSession() must NOT touch these keys — queued games survive
+// auth reset. See __qa.assertInvariants() at the bottom of this file.
+
+const QUEUE_PENDING_KEY = "botc_logger_queue_pending";
+const QUEUE_FAILED_KEY  = "botc_logger_queue_failed";
+
+function queueRead(key) {
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (_) {
+    return [];
+  }
+}
+
+function queueWrite(key, arr) {
+  try { localStorage.setItem(key, JSON.stringify(arr)); } catch (_) {}
+  window.dispatchEvent(new CustomEvent("botc:queue-changed"));
+}
+
+function queueNewEntry(payload) {
+  return {
+    id: crypto.randomUUID(),
+    createdAt: Date.now(),
+    payload,
+    attempts: 0,
+    lastError: null,
+  };
+}
+
+function getPending() { return queueRead(QUEUE_PENDING_KEY); }
+function getFailed()  { return queueRead(QUEUE_FAILED_KEY); }
+
 // ——— SESSION ———
 // Clears stored credentials and returns the user to the setup screen.
 // Called on auth failure AND from the manual reset button in the header.
