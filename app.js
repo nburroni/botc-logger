@@ -128,8 +128,10 @@ function queueRead(key) {
 }
 
 function queueWrite(key, arr) {
-  try { localStorage.setItem(key, JSON.stringify(arr)); } catch (_) {}
-  window.dispatchEvent(new CustomEvent("botc:queue-changed"));
+  try {
+    localStorage.setItem(key, JSON.stringify(arr));
+    window.dispatchEvent(new CustomEvent("botc:queue-changed"));
+  } catch (_) {}
 }
 
 function queueNewEntry(payload) {
