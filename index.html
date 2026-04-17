@@ -288,8 +288,25 @@
 <script src="app.js"></script>
     <script>
       if ("serviceWorker" in navigator) {
-        window.addEventListener("load", () => {
-          navigator.serviceWorker.register("sw.js").catch((err) => console.warn("SW registration failed:", err));
+        window.addEventListener("load", async () => {
+          try {
+            const reg = await navigator.serviceWorker.register("sw.js");
+            reg.addEventListener("updatefound", () => {
+              const newWorker = reg.installing;
+              if (!newWorker) return;
+              newWorker.addEventListener("statechange", () => {
+                if (newWorker.state === "installed" && navigator.serviceWorker.controller) {
+                  // An update is available and an old SW is currently in control.
+                  if (window.showToast) {
+                    // sticky: true extends auto-dismiss to 10s so users have time to tap.
+                    window.showToast("Update available — tap to reload", "info", { onClick: () => location.reload(), sticky: true });
+                  }
+                }
+              });
+            });
+          } catch (err) {
+            console.warn("SW registration failed:", err);
+          }
         });
       }
     </script>
