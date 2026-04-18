@@ -481,20 +481,21 @@ async function submitGame(e) {
   };
 
   try {
-    const resp = await fetch(ENDPOINT, {
-      method: "POST",
-      body: JSON.stringify(payload),
-      redirect: "follow"
-    });
-    const result = await resp.json();
-    if (result.error) {
-      showToast("Error: " + result.error, "error");
-    } else {
+    const result = await submitViaQueue(payload);
+
+    if (result.synced) {
       showToast("Game logged! (row " + result.row + ")", "success");
       saveGameInfo();
       resetFormForNextGame();
       refreshPrefillButton();
       loadOptions();
+    } else if (result.queued) {
+      showToast("Saved offline — will sync when online", "info");
+      saveGameInfo();
+      resetFormForNextGame();
+      refreshPrefillButton();
+    } else if (result.authError) {
+      clearSession("Wrong password — please re-enter");
     }
   } catch (err) {
     showToast("Failed to log: " + err.message, "error");
