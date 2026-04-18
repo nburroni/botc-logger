@@ -276,6 +276,12 @@ function maybeStartInterval() { /* see Chunk 3 */ }
 // Clears stored credentials and returns the user to the setup screen.
 // Called on auth failure AND from the manual reset button in the header.
 function clearSession(toastMsg) {
+  // INVARIANT: do NOT touch queue buckets or game-info prefill. Queued games
+  // are user data that must survive a password reset.
+  const beforePending = localStorage.getItem(QUEUE_PENDING_KEY);
+  const beforeFailed  = localStorage.getItem(QUEUE_FAILED_KEY);
+  const beforePrefill = localStorage.getItem(GAME_INFO_KEY);
+
   deleteCookie(STORAGE_KEY);
   deleteCookie(AUTH_KEY);
   ENDPOINT = "";
@@ -286,6 +292,12 @@ function clearSession(toastMsg) {
   document.getElementById("setupOverlay").classList.remove("hidden");
   setConnected(false, "Not connected");
   if (toastMsg) showToast(toastMsg, "error");
+
+  if (localStorage.getItem(QUEUE_PENDING_KEY) !== beforePending ||
+      localStorage.getItem(QUEUE_FAILED_KEY)  !== beforeFailed  ||
+      localStorage.getItem(GAME_INFO_KEY)     !== beforePrefill) {
+    console.error("clearSession violated the queue/prefill invariant — please fix.");
+  }
 }
 
 // ——— SHA-256 ———
