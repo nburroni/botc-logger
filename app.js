@@ -280,6 +280,7 @@ function maybeStartInterval() { /* see Chunk 3 */ }
 function refreshQueueBadge() {
   const badge = document.getElementById("queueBadge");
   const text  = document.getElementById("queueBadgeText");
+  if (!badge || !text) return;
   const p = getPending().length;
   const f = getFailed().length;
   if (p + f === 0) { badge.classList.add("hidden"); return; }
