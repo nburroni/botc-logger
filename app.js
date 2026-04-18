@@ -299,6 +299,128 @@ window.addEventListener("botc:queue-changed", () => {
 });
 document.addEventListener("DOMContentLoaded", refreshQueueBadge);
 
+// Module-level set of entry IDs whose delete button is currently armed.
+// Must live outside renderQueueSheet because innerHTML re-renders wipe DOM nodes.
+// _armTimers stores the setTimeout handle per id so we can cancel stale timers
+// when the sheet closes or when an entry is re-armed after close/reopen.
+const _armedForDelete = new Set();
+const _armTimers = new Map();
+
+function openQueueSheet() {
+  document.getElementById("queueSheetBackdrop").classList.remove("hidden");
+  document.getElementById("queueSheet").classList.remove("hidden");
+  renderQueueSheet();
+  document.addEventListener("keydown", queueSheetKeyHandler);
+}
+
+function closeQueueSheet() {
+  document.getElementById("queueSheetBackdrop").classList.add("hidden");
+  document.getElementById("queueSheet").classList.add("hidden");
+  document.removeEventListener("keydown", queueSheetKeyHandler);
+  // Cancel all pending disarm timers before clearing state, so a re-open +
+  // re-arm within 3s isn't prematurely disarmed by an old timer.
+  _armTimers.forEach((t) => clearTimeout(t));
+  _armTimers.clear();
+  _armedForDelete.clear();
+}
+
+function queueSheetKeyHandler(e) {
+  if (e.key === "Escape") closeQueueSheet();
+}
+
+function summarizeEntry(e) {
+  const p = e.payload || {};
+  const bits = [p.date, p.event, p.script, p.storyteller].filter(Boolean);
+  return bits.length ? bits.join(" · ") : "(empty game)";
+}
+
+function renderQueueRow(entry, bucket) {
+  const cls = bucket === "failed" ? "queue-row failed" : "queue-row";
+  const err = entry.lastError
+    ? `<div class="queue-row-error">${escHtml(entry.lastError)}</div>`
+    : "";
+  // Sanitize id before splicing into inline onclick strings: crypto.randomUUID()
+  // always produces hex + hyphens, but a corrupted/tampered localStorage entry
+  // could contain quotes or other characters that would break the attribute context.
+  // IMPORTANT: use safeId for ALL _armedForDelete lookups so they stay consistent
+  // with confirmDeleteQueued, which receives safeId from the rendered onclick.
+  const safeId = String(entry.id).replace(/[^0-9a-f-]/gi, "");
+  const safeBucket = bucket === "failed" ? "failed" : "pending"; // enum-clamp
+  const deleteLabel = _armedForDelete.has(safeId) ? "Tap again to confirm" : "Delete";
+  const armedAttr = _armedForDelete.has(safeId) ? ' data-armed="1"' : "";
+  return `
+    <div class="${cls}" data-id="${safeId}">
+      <div class="queue-row-summary">${escHtml(summarizeEntry(entry))}</div>
+      <div class="queue-row-meta">${new Date(entry.createdAt).toLocaleString()} · attempts: ${entry.attempts}</div>
+      ${err}
+      <div class="queue-row-actions">
+        <button type="button" onclick="retryQueued('${safeId}', '${safeBucket}')">Retry</button>
+        <button type="button" class="danger"${armedAttr} onclick="confirmDeleteQueued('${safeId}', '${safeBucket}')">${deleteLabel}</button>
+      </div>
+    </div>
+  `;
+}
+
+function renderQueueSheet() {
+  const body = document.getElementById("queueSheetBody");
+  if (!body) return;
+  const p = getPending();
+  const f = getFailed();
+  const chunks = [];
+  if (p.length) {
+    chunks.push(`<div class="sheet-section-title">Pending (${p.length})</div>`);
+    chunks.push(...p.map((e) => renderQueueRow(e, "pending")));
+  }
+  if (f.length) {
+    chunks.push(`<div class="sheet-section-title">Failed (${f.length})</div>`);
+    chunks.push(...f.map((e) => renderQueueRow(e, "failed")));
+  }
+  if (chunks.length === 0) {
+    chunks.push(`<div class="queue-row-meta" style="text-align:center;padding:20px;">Nothing queued.</div>`);
+  }
+  body.innerHTML = chunks.join("");
+  // Null-guard: #retryAllBtn is added by Task 3.2. Guard defensively so any
+  // botc:queue-changed event fired before a page reload picks up Task 3.2's
+  // markup doesn't throw and halt the drain.
+  document.getElementById("retryAllBtn")?.classList.toggle("hidden", p.length + f.length === 0);
+}
+
+// Note: btnEl param removed — arming state lives in _armedForDelete/_armTimers, not the DOM node.
+function confirmDeleteQueued(id, bucket) {
+  if (_armedForDelete.has(id)) {
+    // Confirmed: cancel the disarm timer and delete the entry.
+    clearTimeout(_armTimers.get(id));
+    _armTimers.delete(id);
+    _armedForDelete.delete(id);
+    deleteQueued(id, bucket);
+    return;
+  }
+  // Arm: store the handle so closeQueueSheet (or a re-arm) can cancel it.
+  // Without cancellation a stale timer from a prior arm could fire after
+  // close → reopen and prematurely disarm the freshly re-armed entry.
+  _armedForDelete.add(id);
+  renderQueueSheet(); // re-render so the button immediately shows "Tap again to confirm"
+  const timer = setTimeout(() => {
+    _armTimers.delete(id);
+    if (_armedForDelete.delete(id)) renderQueueSheet(); // disarm if not yet confirmed
+  }, 3000);
+  _armTimers.set(id, timer);
+}
+
+function retryAll() {
+  const failed = getFailed();
+  if (failed.length) {
+    const next = failed.map((e) => ({ ...e, lastError: null }));
+    // Each queueWrite dispatches "botc:queue-changed", which triggers
+    // refreshQueueBadge + renderQueueSheet — no manual re-render needed here.
+    queueWrite(QUEUE_PENDING_KEY, [...getPending(), ...next]);
+    queueWrite(QUEUE_FAILED_KEY, []);
+  }
+  // drainQueue calls maybeStartInterval in its finally block (see Chunk 2),
+  // so the 30s interval is properly started/stopped after this drain.
+  drainQueue();
+}
+
 // ——— SESSION ———
 // Clears stored credentials and returns the user to the setup screen.
 // Called on auth failure AND from the manual reset button in the header.
