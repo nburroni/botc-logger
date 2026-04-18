@@ -272,6 +272,32 @@ function deleteQueued(id, bucket) {
 // Filled in Chunk 3 (triggers). Stub for now so submitViaQueue compiles.
 function maybeStartInterval() { /* see Chunk 3 */ }
 
+// ——— QUEUE UI ———
+// Renders the header badge and the bottom-sheet list. Never writes to
+// localStorage directly — goes through the queue module (submit/drain/retry/
+// delete). Subscribes to "botc:queue-changed".
+
+function refreshQueueBadge() {
+  const badge = document.getElementById("queueBadge");
+  const text  = document.getElementById("queueBadgeText");
+  const p = getPending().length;
+  const f = getFailed().length;
+  if (p + f === 0) { badge.classList.add("hidden"); return; }
+  badge.classList.remove("hidden");
+  badge.classList.toggle("has-failed", f > 0);
+  text.textContent = f > 0 ? `↻ ${p} · ⚠ ${f}` : `↻ ${p}`;
+  badge.setAttribute("aria-label", `Sync queue: ${p} pending, ${f} failed`);
+}
+
+window.addEventListener("botc:queue-changed", () => {
+  refreshQueueBadge();
+  // renderQueueSheet is defined in Task 3.3. Guard against the window between
+  // Task 3.1 and Task 3.3 where the listener is registered but the function
+  // doesn't exist yet (would throw ReferenceError during incremental development).
+  if (typeof renderQueueSheet === "function") renderQueueSheet();
+});
+document.addEventListener("DOMContentLoaded", refreshQueueBadge);
+
 // ——— SESSION ———
 // Clears stored credentials and returns the user to the setup screen.
 // Called on auth failure AND from the manual reset button in the header.

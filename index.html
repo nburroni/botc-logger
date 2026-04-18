@@ -34,6 +34,9 @@
     <span class="connection-dot" id="connectionDot"></span>
     <span id="connectionStatus">Not connected</span>
   </div>
+        <button type="button" class="queue-badge hidden" id="queueBadge" onclick="openQueueSheet()" aria-label="Sync queue">
+          <span id="queueBadgeText">↻ 0</span>
+        </button>
   <button type="button" class="reset-btn" id="resetBtn" onclick="clearSession()" title="Clear session / re-connect">&#x21bb;</button>
 </div>
 

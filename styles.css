@@ -34,10 +34,27 @@ body {
   border-bottom: 1px solid var(--border);
   backdrop-filter: blur(20px);
   display: grid;
-  grid-template-columns: 1fr auto;
-  grid-template-areas: "title reset" "subtitle reset";
+  grid-template-columns: 1fr auto auto;
+  grid-template-areas: "title badge reset" "subtitle badge reset";
   column-gap: 12px;
 }
+.queue-badge {
+  grid-area: badge;
+  align-self: center;
+  justify-self: end;
+  margin-right: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-muted);
+  border-radius: 999px;
+  padding: 6px 10px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.queue-badge:hover { border-color: var(--accent); color: var(--text); }
+.queue-badge.has-failed { border-color: var(--evil); color: var(--evil); }
+.queue-badge.hidden { display: none; }
 .header h1 {
   grid-area: title;
   font-size: 20px; font-weight: 700;
