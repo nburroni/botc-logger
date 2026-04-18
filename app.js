@@ -153,6 +153,7 @@ async function queueAttempt(payload) {
   try {
     const resp = await fetch(ENDPOINT, {
       method: "POST",
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
       redirect: "follow",
     });
@@ -183,8 +184,8 @@ async function submitViaQueue(payload) {
   }
   const result = await queueAttempt(payload);
   if (result.ok) {
-    // Opportunistic drain: we have a working connection.
-    drainQueue();
+    // Opportunistic drain: we have a working connection. Fire-and-forget.
+    drainQueue().catch(() => {});
     return { synced: true, row: result.row };
   }
   if (result.authError) {
