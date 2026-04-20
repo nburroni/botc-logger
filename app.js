@@ -84,6 +84,10 @@ document.addEventListener("DOMContentLoaded", () => {
     if (!e.target.closest(".autocomplete-wrapper"))
       document.querySelectorAll(".autocomplete-list").forEach(l => l.classList.remove("show"));
   });
+
+  // Fix 1: propagate Starting Role to mid/end role fields when they are empty
+  // (Team propagation is handled in selectChip and selectAC via autoFillRoleFields)
+  document.getElementById("startingRole").addEventListener("input", () => autoFillRoleFields());
 });
 
 function mergeUnique(staticList, dynamicList) {
@@ -269,8 +273,31 @@ function deleteQueued(id, bucket) {
   if (next.length !== list.length) queueWrite(key, next);
 }
 
-// Filled in Chunk 3 (triggers). Stub for now so submitViaQueue compiles.
-function maybeStartInterval() { /* see Chunk 3 */ }
+let _drainInterval = null;
+
+function maybeStartInterval() {
+  const active = getPending().length > 0;
+  if (active && !_drainInterval) {
+    _drainInterval = setInterval(drainQueue, 30_000);
+  } else if (!active && _drainInterval) {
+    clearInterval(_drainInterval);
+    _drainInterval = null;
+  }
+}
+// NOTE: maybeStartInterval is also called from drainQueue (Chunk 2, finally block)
+// and from submitViaQueue (Chunk 2) on every enqueue — those call sites keep the
+// interval properly in sync with queue state during normal operation.
+
+// Triggers: event-driven + periodic (maybeStartInterval) + manual (retry btn).
+window.addEventListener("online", drainQueue);
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible") drainQueue();
+});
+// Kick a drain on load if anything is pending.
+document.addEventListener("DOMContentLoaded", () => {
+  if (getPending().length > 0) drainQueue();
+  maybeStartInterval();
+});
 
 // ——— QUEUE UI ———
 // Renders the header badge and the bottom-sheet list. Never writes to
@@ -537,6 +564,8 @@ function selectAC(el, fieldId) {
   el.closest(".autocomplete-list").classList.remove("show");
   // Auto-set team when a role is selected
   autoSetTeamFromRole(fieldId);
+  // Propagate to mid/end fields if this was the starting role
+  if (fieldId === "startingRole") autoFillRoleFields();
 }
 
 function escHtml(s) { return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&#039;"); }
@@ -566,6 +595,31 @@ function autoSetTeamFromRole(fieldId) {
   autoSetWinLoss();
 }
 
+// ——— ROLE AUTOFILL ———
+// When Starting Role/Team is set and mid/end fields are empty, fill them in.
+// Called from the startingRole input listener and from selectAC.
+function autoFillRoleFields() {
+  const role = document.getElementById("startingRole").value.trim();
+  const team = document.getElementById("startingTeam").value;
+
+  const rolePairs = [
+    ["midGameRole",  "midGameTeam"],
+    ["endingRole",   "endingTeam"],
+  ];
+  for (const [roleField, teamField] of rolePairs) {
+    if (role && !document.getElementById(roleField).value.trim()) {
+      document.getElementById(roleField).value = role;
+    }
+    if (team && !document.getElementById(teamField).value) {
+      document.getElementById(teamField).value = team;
+      document.querySelectorAll('[data-field="' + teamField + '"]').forEach(c => {
+        c.classList.toggle("selected", c.dataset.value === team);
+      });
+    }
+  }
+  autoSetWinLoss();
+}
+
 // ——— CHIPS ———
 function selectChip(el) {
   const field = el.dataset.field;
@@ -575,6 +629,8 @@ function selectChip(el) {
   if (hidden.value === value) { hidden.value = ""; }
   else { el.classList.add("selected"); hidden.value = value; }
   autoSetWinLoss();
+  // Propagate starting team to mid/end team when they're empty
+  if (field === "startingTeam") autoFillRoleFields();
 }
 
 function autoSetWinLoss() {
