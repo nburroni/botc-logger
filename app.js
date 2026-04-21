@@ -84,6 +84,10 @@ document.addEventListener("DOMContentLoaded", () => {
     if (!e.target.closest(".autocomplete-wrapper"))
       document.querySelectorAll(".autocomplete-list").forEach(l => l.classList.remove("show"));
   });
+
+  // Fix 1: propagate Starting Role to mid/end role fields when they are empty
+  // (Team propagation is handled in selectChip and selectAC via autoFillRoleFields)
+  document.getElementById("startingRole").addEventListener("input", () => autoFillRoleFields());
 });
 
 function mergeUnique(staticList, dynamicList) {
@@ -104,10 +108,356 @@ function deleteCookie(name) {
   document.cookie = name+"=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/;SameSite=Strict";
 }
 
+// ——— QUEUE (OFFLINE SUBMIT) ———
+// Owns the two localStorage buckets. Nothing else in app.js writes to these
+// keys — the queue module is the sole writer. Reads go through getPending /
+// getFailed. State changes are published via a window "botc:queue-changed"
+// event so the queue-ui module can re-render without tight coupling.
+//
+// INVARIANT: clearSession() must NOT touch these keys — queued games survive
+// auth reset. See __qa.assertInvariants() at the bottom of this file.
+
+const QUEUE_PENDING_KEY = "botc_logger_queue_pending";
+const QUEUE_FAILED_KEY  = "botc_logger_queue_failed";
+
+function queueRead(key) {
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (_) {
+    return [];
+  }
+}
+
+function queueWrite(key, arr) {
+  try {
+    localStorage.setItem(key, JSON.stringify(arr));
+    window.dispatchEvent(new CustomEvent("botc:queue-changed"));
+  } catch (_) {}
+}
+
+function queueNewEntry(payload) {
+  return {
+    id: crypto.randomUUID(),
+    createdAt: Date.now(),
+    payload,
+    attempts: 0,
+    lastError: null,
+  };
+}
+
+function getPending() { return queueRead(QUEUE_PENDING_KEY); }
+function getFailed()  { return queueRead(QUEUE_FAILED_KEY); }
+
+// Tries one fetch against the Apps Script endpoint. Returns a normalized
+// result object: { ok, authError, userError, row, err }.
+async function queueAttempt(payload) {
+  try {
+    const resp = await fetch(ENDPOINT, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+      redirect: "follow",
+    });
+    const body = await resp.json();
+    if (body.error === "Unauthorized") {
+      return { ok: false, authError: true, err: "Unauthorized" };
+    }
+    if (body.error) {
+      return { ok: false, userError: true, err: body.error };
+    }
+    return { ok: true, row: body.row };
+  } catch (err) {
+    return { ok: false, networkError: true, err: String(err) };
+  }
+}
+
+// Public API: try once if online; enqueue otherwise.
+// Returns one of:
+//   { synced: true, row }
+//   { queued: true }
+//   { synced: false, authError: true, err }     // caller should clearSession
+async function submitViaQueue(payload) {
+  if (!navigator.onLine) {
+    const entry = queueNewEntry(payload);
+    queueWrite(QUEUE_PENDING_KEY, [...getPending(), entry]);
+    maybeStartInterval();
+    return { queued: true };
+  }
+  const result = await queueAttempt(payload);
+  if (result.ok) {
+    // Opportunistic drain: we have a working connection. Fire-and-forget.
+    drainQueue().catch(() => {});
+    return { synced: true, row: result.row };
+  }
+  if (result.authError) {
+    return { synced: false, authError: true, err: result.err };
+  }
+  // userError or networkError → enqueue with the error annotated.
+  const entry = queueNewEntry(payload);
+  entry.attempts = 1;
+  entry.lastError = result.err;
+  queueWrite(QUEUE_PENDING_KEY, [...getPending(), entry]);
+  maybeStartInterval();
+  return { queued: true };
+}
+
+let _isDraining = false;
+let _pendingRerun = false;
+
+// Processes the pending bucket FIFO. Auth failures stop the drain; other
+// errors move the entry to failed and continue. Network/5xx leaves the
+// entry in place, increments attempts, and stops the drain so we don't
+// hammer a flaky connection.
+async function drainQueue() {
+  if (_isDraining) { _pendingRerun = true; return; }
+  _isDraining = true;
+  try {
+    let synced = 0;
+    while (true) {
+      const pending = getPending();
+      if (pending.length === 0) break;
+      const entry = pending[0];
+      const result = await queueAttempt(entry.payload);
+
+      if (result.ok) {
+        queueWrite(QUEUE_PENDING_KEY, pending.slice(1));
+        synced++;
+        continue;
+      }
+      if (result.authError) {
+        const updated = { ...entry, attempts: entry.attempts + 1, lastError: result.err };
+        queueWrite(QUEUE_PENDING_KEY, pending.slice(1));
+        queueWrite(QUEUE_FAILED_KEY, [...getFailed(), updated]);
+        break; // stop draining; other entries likely fail the same way.
+      }
+      if (result.userError) {
+        const updated = { ...entry, attempts: entry.attempts + 1, lastError: result.err };
+        queueWrite(QUEUE_PENDING_KEY, pending.slice(1));
+        queueWrite(QUEUE_FAILED_KEY, [...getFailed(), updated]);
+        continue; // isolated data problem; keep going.
+      }
+      // networkError → leave in place, annotate, stop.
+      const updated = { ...entry, attempts: entry.attempts + 1, lastError: result.err };
+      queueWrite(QUEUE_PENDING_KEY, [updated, ...pending.slice(1)]);
+      break;
+    }
+    if (synced > 0) showToast(`Synced ${synced} game${synced === 1 ? "" : "s"}`, "success");
+    maybeStartInterval();
+  } finally {
+    _isDraining = false;
+    if (_pendingRerun) {
+      _pendingRerun = false;
+      drainQueue();
+    }
+  }
+}
+
+function retryQueued(id, bucket) {
+  const fromKey = bucket === "failed" ? QUEUE_FAILED_KEY : QUEUE_PENDING_KEY;
+  const list = queueRead(fromKey);
+  const idx = list.findIndex((e) => e.id === id);
+  if (idx === -1) return;
+  const [entry] = list.splice(idx, 1);
+  queueWrite(fromKey, list);
+  queueWrite(QUEUE_PENDING_KEY, [...getPending(), { ...entry, attempts: entry.attempts, lastError: null }]);
+  drainQueue();
+}
+
+function deleteQueued(id, bucket) {
+  const key = bucket === "failed" ? QUEUE_FAILED_KEY : QUEUE_PENDING_KEY;
+  const list = queueRead(key);
+  const next = list.filter((e) => e.id !== id);
+  if (next.length !== list.length) queueWrite(key, next);
+}
+
+let _drainInterval = null;
+
+function maybeStartInterval() {
+  const active = getPending().length > 0;
+  if (active && !_drainInterval) {
+    _drainInterval = setInterval(drainQueue, 30_000);
+  } else if (!active && _drainInterval) {
+    clearInterval(_drainInterval);
+    _drainInterval = null;
+  }
+}
+// NOTE: maybeStartInterval is also called from drainQueue (Chunk 2, finally block)
+// and from submitViaQueue (Chunk 2) on every enqueue — those call sites keep the
+// interval properly in sync with queue state during normal operation.
+
+// Triggers: event-driven + periodic (maybeStartInterval) + manual (retry btn).
+window.addEventListener("online", drainQueue);
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible") drainQueue();
+});
+// Kick a drain on load if anything is pending.
+document.addEventListener("DOMContentLoaded", () => {
+  if (getPending().length > 0) drainQueue();
+  maybeStartInterval();
+});
+
+// ——— QUEUE UI ———
+// Renders the header badge and the bottom-sheet list. Never writes to
+// localStorage directly — goes through the queue module (submit/drain/retry/
+// delete). Subscribes to "botc:queue-changed".
+
+function refreshQueueBadge() {
+  const badge = document.getElementById("queueBadge");
+  const text  = document.getElementById("queueBadgeText");
+  if (!badge || !text) return;
+  const p = getPending().length;
+  const f = getFailed().length;
+  if (p + f === 0) { badge.classList.add("hidden"); return; }
+  badge.classList.remove("hidden");
+  badge.classList.toggle("has-failed", f > 0);
+  text.textContent = f > 0 ? `↻ ${p} · ⚠ ${f}` : `↻ ${p}`;
+  badge.setAttribute("aria-label", `Sync queue: ${p} pending, ${f} failed`);
+}
+
+window.addEventListener("botc:queue-changed", () => {
+  refreshQueueBadge();
+  // renderQueueSheet is defined in Task 3.3. Guard against the window between
+  // Task 3.1 and Task 3.3 where the listener is registered but the function
+  // doesn't exist yet (would throw ReferenceError during incremental development).
+  if (typeof renderQueueSheet === "function") renderQueueSheet();
+});
+document.addEventListener("DOMContentLoaded", refreshQueueBadge);
+
+// Module-level set of entry IDs whose delete button is currently armed.
+// Must live outside renderQueueSheet because innerHTML re-renders wipe DOM nodes.
+// _armTimers stores the setTimeout handle per id so we can cancel stale timers
+// when the sheet closes or when an entry is re-armed after close/reopen.
+const _armedForDelete = new Set();
+const _armTimers = new Map();
+
+function openQueueSheet() {
+  document.getElementById("queueSheetBackdrop").classList.remove("hidden");
+  document.getElementById("queueSheet").classList.remove("hidden");
+  renderQueueSheet();
+  document.addEventListener("keydown", queueSheetKeyHandler);
+}
+
+function closeQueueSheet() {
+  document.getElementById("queueSheetBackdrop").classList.add("hidden");
+  document.getElementById("queueSheet").classList.add("hidden");
+  document.removeEventListener("keydown", queueSheetKeyHandler);
+  // Cancel all pending disarm timers before clearing state, so a re-open +
+  // re-arm within 3s isn't prematurely disarmed by an old timer.
+  _armTimers.forEach((t) => clearTimeout(t));
+  _armTimers.clear();
+  _armedForDelete.clear();
+}
+
+function queueSheetKeyHandler(e) {
+  if (e.key === "Escape") closeQueueSheet();
+}
+
+function summarizeEntry(e) {
+  const p = e.payload || {};
+  const bits = [p.date, p.event, p.script, p.storyteller].filter(Boolean);
+  return bits.length ? bits.join(" · ") : "(empty game)";
+}
+
+function renderQueueRow(entry, bucket) {
+  const cls = bucket === "failed" ? "queue-row failed" : "queue-row";
+  const err = entry.lastError
+    ? `<div class="queue-row-error">${escHtml(entry.lastError)}</div>`
+    : "";
+  // Sanitize id before splicing into inline onclick strings: crypto.randomUUID()
+  // always produces hex + hyphens, but a corrupted/tampered localStorage entry
+  // could contain quotes or other characters that would break the attribute context.
+  // IMPORTANT: use safeId for ALL _armedForDelete lookups so they stay consistent
+  // with confirmDeleteQueued, which receives safeId from the rendered onclick.
+  const safeId = String(entry.id).replace(/[^0-9a-f-]/gi, "");
+  const safeBucket = bucket === "failed" ? "failed" : "pending"; // enum-clamp
+  const deleteLabel = _armedForDelete.has(safeId) ? "Tap again to confirm" : "Delete";
+  const armedAttr = _armedForDelete.has(safeId) ? ' data-armed="1"' : "";
+  return `
+    <div class="${cls}" data-id="${safeId}">
+      <div class="queue-row-summary">${escHtml(summarizeEntry(entry))}</div>
+      <div class="queue-row-meta">${new Date(entry.createdAt).toLocaleString()} · attempts: ${entry.attempts}</div>
+      ${err}
+      <div class="queue-row-actions">
+        <button type="button" onclick="retryQueued('${safeId}', '${safeBucket}')">Retry</button>
+        <button type="button" class="danger"${armedAttr} onclick="confirmDeleteQueued('${safeId}', '${safeBucket}')">${deleteLabel}</button>
+      </div>
+    </div>
+  `;
+}
+
+function renderQueueSheet() {
+  const body = document.getElementById("queueSheetBody");
+  if (!body) return;
+  const p = getPending();
+  const f = getFailed();
+  const chunks = [];
+  if (p.length) {
+    chunks.push(`<div class="sheet-section-title">Pending (${p.length})</div>`);
+    chunks.push(...p.map((e) => renderQueueRow(e, "pending")));
+  }
+  if (f.length) {
+    chunks.push(`<div class="sheet-section-title">Failed (${f.length})</div>`);
+    chunks.push(...f.map((e) => renderQueueRow(e, "failed")));
+  }
+  if (chunks.length === 0) {
+    chunks.push(`<div class="queue-row-meta" style="text-align:center;padding:20px;">Nothing queued.</div>`);
+  }
+  body.innerHTML = chunks.join("");
+  // Null-guard: #retryAllBtn is added by Task 3.2. Guard defensively so any
+  // botc:queue-changed event fired before a page reload picks up Task 3.2's
+  // markup doesn't throw and halt the drain.
+  document.getElementById("retryAllBtn")?.classList.toggle("hidden", p.length + f.length === 0);
+}
+
+// Note: btnEl param removed — arming state lives in _armedForDelete/_armTimers, not the DOM node.
+function confirmDeleteQueued(id, bucket) {
+  if (_armedForDelete.has(id)) {
+    // Confirmed: cancel the disarm timer and delete the entry.
+    clearTimeout(_armTimers.get(id));
+    _armTimers.delete(id);
+    _armedForDelete.delete(id);
+    deleteQueued(id, bucket);
+    return;
+  }
+  // Arm: store the handle so closeQueueSheet (or a re-arm) can cancel it.
+  // Without cancellation a stale timer from a prior arm could fire after
+  // close → reopen and prematurely disarm the freshly re-armed entry.
+  _armedForDelete.add(id);
+  renderQueueSheet(); // re-render so the button immediately shows "Tap again to confirm"
+  const timer = setTimeout(() => {
+    _armTimers.delete(id);
+    if (_armedForDelete.delete(id)) renderQueueSheet(); // disarm if not yet confirmed
+  }, 3000);
+  _armTimers.set(id, timer);
+}
+
+function retryAll() {
+  const failed = getFailed();
+  if (failed.length) {
+    const next = failed.map((e) => ({ ...e, lastError: null }));
+    // Each queueWrite dispatches "botc:queue-changed", which triggers
+    // refreshQueueBadge + renderQueueSheet — no manual re-render needed here.
+    queueWrite(QUEUE_PENDING_KEY, [...getPending(), ...next]);
+    queueWrite(QUEUE_FAILED_KEY, []);
+  }
+  // drainQueue calls maybeStartInterval in its finally block (see Chunk 2),
+  // so the 30s interval is properly started/stopped after this drain.
+  drainQueue();
+}
+
 // ——— SESSION ———
 // Clears stored credentials and returns the user to the setup screen.
 // Called on auth failure AND from the manual reset button in the header.
 function clearSession(toastMsg) {
+  // INVARIANT: do NOT touch queue buckets or game-info prefill. Queued games
+  // are user data that must survive a password reset.
+  const beforePending = localStorage.getItem(QUEUE_PENDING_KEY);
+  const beforeFailed  = localStorage.getItem(QUEUE_FAILED_KEY);
+  const beforePrefill = localStorage.getItem(GAME_INFO_KEY);
+
   deleteCookie(STORAGE_KEY);
   deleteCookie(AUTH_KEY);
   ENDPOINT = "";
@@ -118,6 +468,12 @@ function clearSession(toastMsg) {
   document.getElementById("setupOverlay").classList.remove("hidden");
   setConnected(false, "Not connected");
   if (toastMsg) showToast(toastMsg, "error");
+
+  if (localStorage.getItem(QUEUE_PENDING_KEY) !== beforePending ||
+      localStorage.getItem(QUEUE_FAILED_KEY)  !== beforeFailed  ||
+      localStorage.getItem(GAME_INFO_KEY)     !== beforePrefill) {
+    console.error("clearSession violated the queue/prefill invariant — please fix.");
+  }
 }
 
 // ——— SHA-256 ———
@@ -208,6 +564,8 @@ function selectAC(el, fieldId) {
   el.closest(".autocomplete-list").classList.remove("show");
   // Auto-set team when a role is selected
   autoSetTeamFromRole(fieldId);
+  // Propagate to mid/end fields if this was the starting role
+  if (fieldId === "startingRole") autoFillRoleFields();
 }
 
 function escHtml(s) { return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&#039;"); }
@@ -237,6 +595,31 @@ function autoSetTeamFromRole(fieldId) {
   autoSetWinLoss();
 }
 
+// ——— ROLE AUTOFILL ———
+// When Starting Role/Team is set and mid/end fields are empty, fill them in.
+// Called from the startingRole input listener and from selectAC.
+function autoFillRoleFields() {
+  const role = document.getElementById("startingRole").value.trim();
+  const team = document.getElementById("startingTeam").value;
+
+  const rolePairs = [
+    ["midGameRole",  "midGameTeam"],
+    ["endingRole",   "endingTeam"],
+  ];
+  for (const [roleField, teamField] of rolePairs) {
+    if (role && !document.getElementById(roleField).value.trim()) {
+      document.getElementById(roleField).value = role;
+    }
+    if (team && !document.getElementById(teamField).value) {
+      document.getElementById(teamField).value = team;
+      document.querySelectorAll('[data-field="' + teamField + '"]').forEach(c => {
+        c.classList.toggle("selected", c.dataset.value === team);
+      });
+    }
+  }
+  autoSetWinLoss();
+}
+
 // ——— CHIPS ———
 function selectChip(el) {
   const field = el.dataset.field;
@@ -246,6 +629,8 @@ function selectChip(el) {
   if (hidden.value === value) { hidden.value = ""; }
   else { el.classList.add("selected"); hidden.value = value; }
   autoSetWinLoss();
+  // Propagate starting team to mid/end team when they're empty
+  if (field === "startingTeam") autoFillRoleFields();
 }
 
 function autoSetWinLoss() {
@@ -313,20 +698,21 @@ async function submitGame(e) {
   };
 
   try {
-    const resp = await fetch(ENDPOINT, {
-      method: "POST",
-      body: JSON.stringify(payload),
-      redirect: "follow"
-    });
-    const result = await resp.json();
-    if (result.error) {
-      showToast("Error: " + result.error, "error");
-    } else {
+    const result = await submitViaQueue(payload);
+
+    if (result.synced) {
       showToast("Game logged! (row " + result.row + ")", "success");
       saveGameInfo();
       resetFormForNextGame();
       refreshPrefillButton();
       loadOptions();
+    } else if (result.queued) {
+      showToast("Saved offline — will sync when online", "info");
+      saveGameInfo();
+      resetFormForNextGame();
+      refreshPrefillButton();
+    } else if (result.authError) {
+      clearSession("Wrong password — please re-enter");
     }
   } catch (err) {
     showToast("Failed to log: " + err.message, "error");
@@ -406,9 +792,73 @@ function applyPrefill() {
   document.getElementById("prefillBtn").classList.add("hidden");
 }
 
-function showToast(msg, type) {
+let _toastTimer = null;
+function showToast(msg, type, opts) {
   const t = document.getElementById("toast");
   t.textContent = msg;
   t.className = "toast " + type + " show";
-  setTimeout(() => t.classList.remove("show"), 3000);
+  t.onclick = null;
+  if (opts && typeof opts.onClick === "function") {
+    t.style.cursor = "pointer";
+    t.onclick = opts.onClick;
+  } else {
+    t.style.cursor = "";
+  }
+  clearTimeout(_toastTimer);
+  _toastTimer = setTimeout(() => t.classList.remove("show"), opts && opts.sticky ? 10000 : 3000);
 }
+window.showToast = showToast;
+
+// ——— QA HELPERS (dev only) ———
+// Exposed on window for manual verification via preview_eval. Not gated by a
+// build flag — the repo ships without a build step, and these are harmless
+// to ship (they only inspect/manipulate local state).
+window.__qa = {
+  seedPending(n = 1) {
+    const extra = Array.from({ length: n }, (_, i) => ({
+      id: crypto.randomUUID(),
+      createdAt: Date.now() + i,
+      payload: { date: new Date().toISOString().slice(0, 10), event: "__qa seed", script: "TB", storyteller: "Tester" },
+      attempts: 0,
+      lastError: null,
+    }));
+    queueWrite(QUEUE_PENDING_KEY, [...getPending(), ...extra]);
+  },
+  seedFailed(n = 1) {
+    const extra = Array.from({ length: n }, (_, i) => ({
+      id: crypto.randomUUID(),
+      createdAt: Date.now() + i,
+      payload: { date: new Date().toISOString().slice(0, 10), event: "__qa fail", script: "TB", storyteller: "Tester" },
+      attempts: 3,
+      lastError: "Unauthorized",
+    }));
+    queueWrite(QUEUE_FAILED_KEY, [...getFailed(), ...extra]);
+  },
+  clearAll() {
+    queueWrite(QUEUE_PENDING_KEY, []);
+    queueWrite(QUEUE_FAILED_KEY, []);
+  },
+  // Monkey-patches fetch to reject and overrides navigator.onLine to false,
+  // then dispatches 'offline'. Restore by calling goOnline().
+  // We stash the original property descriptor so goOnline() can restore it
+  // reliably — `delete Navigator.prototype.onLine` is not guaranteed to
+  // reinstate the native getter on all browsers.
+  goOffline() {
+    if (window.__qa._realFetch) return; // already offline
+    window.__qa._realFetch = window.fetch;
+    window.__qa._onLineDesc = Object.getOwnPropertyDescriptor(Navigator.prototype, "onLine");
+    window.fetch = () => Promise.reject(new TypeError("__qa offline"));
+    Object.defineProperty(Navigator.prototype, "onLine", { configurable: true, get: () => false });
+    window.dispatchEvent(new Event("offline"));
+  },
+  goOnline() {
+    if (!window.__qa._realFetch) return;
+    window.fetch = window.__qa._realFetch;
+    window.__qa._realFetch = null;
+    if (window.__qa._onLineDesc) {
+      Object.defineProperty(Navigator.prototype, "onLine", window.__qa._onLineDesc);
+      window.__qa._onLineDesc = null;
+    }
+    window.dispatchEvent(new Event("online"));
+  },
+};

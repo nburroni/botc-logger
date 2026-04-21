@@ -3,6 +3,9 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<meta name="theme-color" content="#6c5ce7">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="BotC Log">
@@ -31,6 +34,9 @@
     <span class="connection-dot" id="connectionDot"></span>
     <span id="connectionStatus">Not connected</span>
   </div>
+        <button type="button" class="queue-badge hidden" id="queueBadge" onclick="openQueueSheet()" aria-label="Sync queue">
+          <span id="queueBadgeText">↻ 0</span>
+        </button>
   <button type="button" class="reset-btn" id="resetBtn" onclick="clearSession()" title="Clear session / re-connect">&#x21bb;</button>
 </div>
 
@@ -194,12 +200,12 @@
         </div>
       </div>
       <div class="field">
-        <label>Last Night</label>
-        <div class="chip-group">
-          <div class="chip win" data-field="lastNight" data-value="Y" onclick="selectChip(this)">Y</div>
-          <div class="chip loss" data-field="lastNight" data-value="N" onclick="selectChip(this)">N</div>
-        </div>
-        <input type="hidden" id="lastNight">
+        <label>Last Day</label>
+        <select id="lastNight">
+          <option value="">—</option>
+          <option value="Y">Y</option>
+          <option value="N">N</option>
+        </select>
       </div>
     </div>
 
@@ -282,6 +288,42 @@
 
 <div class="toast" id="toast"></div>
 
+    <div class="sheet-backdrop hidden" id="queueSheetBackdrop" onclick="closeQueueSheet()"></div>
+    <div class="sheet hidden" id="queueSheet" role="dialog" aria-modal="true" aria-label="Sync queue">
+      <div class="sheet-handle"></div>
+      <div class="sheet-header">
+        <h2>Sync queue</h2>
+        <button type="button" class="sheet-close" onclick="closeQueueSheet()" aria-label="Close">&times;</button>
+      </div>
+      <div class="sheet-body" id="queueSheetBody"></div>
+      <div class="sheet-footer">
+        <button type="button" class="retry-all-btn hidden" id="retryAllBtn" onclick="retryAll()">Retry all</button>
+      </div>
+    </div>
 <script src="app.js"></script>
+    <script>
+      if ("serviceWorker" in navigator) {
+        window.addEventListener("load", async () => {
+          try {
+            const reg = await navigator.serviceWorker.register("sw.js");
+            reg.addEventListener("updatefound", () => {
+              const newWorker = reg.installing;
+              if (!newWorker) return;
+              newWorker.addEventListener("statechange", () => {
+                if (newWorker.state === "installed" && navigator.serviceWorker.controller) {
+                  // An update is available and an old SW is currently in control.
+                  if (window.showToast) {
+                    // sticky: true extends auto-dismiss to 10s so users have time to tap.
+                    window.showToast("Update available — tap to reload", "info", { onClick: () => location.reload(), sticky: true });
+                  }
+                }
+              });
+            });
+          } catch (err) {
+            console.warn("SW registration failed:", err);
+          }
+        });
+      }
+    </script>
 </body>
 </html>

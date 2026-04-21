@@ -1,2 +1,4 @@
 .env
 .clasp.json
+.claude/
+docs/superpowers/
