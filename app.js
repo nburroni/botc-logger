@@ -648,6 +648,37 @@ function autoSetWinLoss() {
   }
 }
 
+// ——— VALIDATION ———
+function markInvalid(id) {
+  const el = document.getElementById(id);
+  if (el) el.closest(".field")?.classList.add("field-invalid");
+}
+
+function clearInvalid(id) {
+  const el = document.getElementById(id);
+  if (el) el.closest(".field")?.classList.remove("field-invalid");
+}
+
+const REQUIRED_FIELDS = [
+  { id: "date",         label: "Date" },
+  { id: "numPlayers",   label: "Players" },
+  { id: "script",       label: "Script" },
+  { id: "startingRole", label: "Starting Role" },
+  { id: "startingTeam", label: "Starting Team" },
+  { id: "startDemon",   label: "Start Demon" },
+  { id: "winningTeam",  label: "Winning Team" },
+  { id: "winLoss",      label: "Result" },
+];
+
+function validateForm() {
+  return REQUIRED_FIELDS.filter(({ id }) => {
+    const el = document.getElementById(id);
+    if (!el) return false;
+    if (id === "numPlayers") return !(parseInt(el.value) > 0);
+    return !el.value.trim();
+  });
+}
+
 // ——— COLLAPSIBLE SECTIONS ———
 function toggleSection(name) {
   const content = document.getElementById(name + "Content");
