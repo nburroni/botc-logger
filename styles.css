@@ -95,7 +95,7 @@ body {
 .field-invalid select,
 .field-invalid textarea {
   border-color: var(--evil) !important;
-  box-shadow: 0 0 0 2px rgba(231, 76, 60, 0.15);
+  box-shadow: 0 0 0 2px rgba(231, 76, 60, 0.15) !important;
 }
 .field-invalid .chip-group {
   outline: 2px solid var(--evil);
