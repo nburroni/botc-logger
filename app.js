@@ -79,6 +79,7 @@ document.addEventListener("DOMContentLoaded", () => {
   setupAutocomplete("fabled3",      () => mergeUnique(ALL_FABLED, DYNAMIC.fabled));
   setupAutocomplete("loric1",       () => mergeUnique(ALL_LORICS, DYNAMIC.lorics));
   setupAutocomplete("loric2",       () => mergeUnique(ALL_LORICS, DYNAMIC.lorics));
+  setupAutocomplete("specialWinType", () => mergeUnique(ALL_ROLES, DYNAMIC.roles));
 
   document.addEventListener("click", (e) => {
     if (!e.target.closest(".autocomplete-wrapper"))
@@ -688,6 +689,7 @@ async function submitGame(e) {
     winningTeam:    document.getElementById("winningTeam").value,
     winLoss:        document.getElementById("winLoss").value,
     lastNight:      document.getElementById("lastNight").value,
+    specialWinType: document.getElementById("specialWinType").value.trim(),
     fabled1:        document.getElementById("fabled1").value.trim(),
     fabled2:        document.getElementById("fabled2").value.trim(),
     fabled3:        document.getElementById("fabled3").value.trim(),
@@ -723,7 +725,7 @@ async function submitGame(e) {
 
 function resetFormForNextGame() {
   ["startingRole","midGameRole","endingRole","roleNotes","livedDiedNotes",
-   "startDemon","endDemon","lastNight","fabled1","fabled2","fabled3",
+   "startDemon","endDemon","lastNight","specialWinType","fabled1","fabled2","fabled3",
    "fabledNotes","loric1","loric2","loricNotes"].forEach(id => {
     document.getElementById(id).value = "";
   });
