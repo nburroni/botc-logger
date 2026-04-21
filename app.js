@@ -81,6 +81,11 @@ document.addEventListener("DOMContentLoaded", () => {
   setupAutocomplete("loric2",       () => mergeUnique(ALL_LORICS, DYNAMIC.lorics));
   setupAutocomplete("specialWinType", () => mergeUnique(ALL_ROLES, DYNAMIC.roles));
 
+  // Live-clear validation errors as required fields are filled
+  ["date", "numPlayers", "script", "startingRole", "startDemon"].forEach(id => {
+    document.getElementById(id).addEventListener("input", () => clearInvalid(id));
+  });
+
   document.addEventListener("click", (e) => {
     if (!e.target.closest(".autocomplete-wrapper"))
       document.querySelectorAll(".autocomplete-list").forEach(l => l.classList.remove("show"));
@@ -629,6 +634,7 @@ function selectChip(el) {
   const hidden = document.getElementById(field);
   if (hidden.value === value) { hidden.value = ""; }
   else { el.classList.add("selected"); hidden.value = value; }
+  clearInvalid(field);
   autoSetWinLoss();
   // Propagate starting team to mid/end team when they're empty
   if (field === "startingTeam") autoFillRoleFields();
@@ -645,6 +651,7 @@ function autoSetWinLoss() {
     document.querySelectorAll('[data-field="winLoss"]').forEach(c => {
       c.classList.toggle("selected", c.dataset.value === result);
     });
+    clearInvalid("winLoss");
   }
 }
 
