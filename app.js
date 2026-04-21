@@ -695,6 +695,14 @@ function toggleSection(name) {
 // ——— SUBMIT ———
 async function submitGame(e) {
   e.preventDefault();
+
+  const failures = validateForm();
+  if (failures.length > 0) {
+    failures.forEach(f => markInvalid(f.id));
+    showToast("Required: " + failures.map(f => f.label).join(", "), "error");
+    return;
+  }
+
   const btn = document.getElementById("submitBtn");
   btn.classList.add("loading"); btn.disabled = true;
 
