@@ -91,6 +91,16 @@ body {
 .section-title .icon { font-size: 14px; }
 .field { margin-bottom: 14px; }
 .field:last-child { margin-bottom: 0; }
+.field-invalid input:not([type="hidden"]),
+.field-invalid select,
+.field-invalid textarea {
+  border-color: var(--evil) !important;
+  box-shadow: 0 0 0 2px rgba(231, 76, 60, 0.15);
+}
+.field-invalid .chip-group {
+  outline: 2px solid var(--evil);
+  border-radius: 6px;
+}
 .field label { display: block; font-size: 13px; font-weight: 500; color: var(--text-muted); margin-bottom: 6px; }
 
 /* INPUTS */
