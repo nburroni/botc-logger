@@ -200,12 +200,12 @@
         </div>
       </div>
       <div class="field">
-        <label>Last Night</label>
-        <div class="chip-group">
-          <div class="chip win" data-field="lastNight" data-value="Y" onclick="selectChip(this)">Y</div>
-          <div class="chip loss" data-field="lastNight" data-value="N" onclick="selectChip(this)">N</div>
-        </div>
-        <input type="hidden" id="lastNight">
+        <label>Last Day</label>
+        <select id="lastNight">
+          <option value="">—</option>
+          <option value="Y">Y</option>
+          <option value="N">N</option>
+        </select>
       </div>
     </div>
 
