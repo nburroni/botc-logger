@@ -808,3 +808,57 @@ function showToast(msg, type, opts) {
   _toastTimer = setTimeout(() => t.classList.remove("show"), opts && opts.sticky ? 10000 : 3000);
 }
 window.showToast = showToast;
+
+// ——— QA HELPERS (dev only) ———
+// Exposed on window for manual verification via preview_eval. Not gated by a
+// build flag — the repo ships without a build step, and these are harmless
+// to ship (they only inspect/manipulate local state).
+window.__qa = {
+  seedPending(n = 1) {
+    const extra = Array.from({ length: n }, (_, i) => ({
+      id: crypto.randomUUID(),
+      createdAt: Date.now() + i,
+      payload: { date: new Date().toISOString().slice(0, 10), event: "__qa seed", script: "TB", storyteller: "Tester" },
+      attempts: 0,
+      lastError: null,
+    }));
+    queueWrite(QUEUE_PENDING_KEY, [...getPending(), ...extra]);
+  },
+  seedFailed(n = 1) {
+    const extra = Array.from({ length: n }, (_, i) => ({
+      id: crypto.randomUUID(),
+      createdAt: Date.now() + i,
+      payload: { date: new Date().toISOString().slice(0, 10), event: "__qa fail", script: "TB", storyteller: "Tester" },
+      attempts: 3,
+      lastError: "Unauthorized",
+    }));
+    queueWrite(QUEUE_FAILED_KEY, [...getFailed(), ...extra]);
+  },
+  clearAll() {
+    queueWrite(QUEUE_PENDING_KEY, []);
+    queueWrite(QUEUE_FAILED_KEY, []);
+  },
+  // Monkey-patches fetch to reject and overrides navigator.onLine to false,
+  // then dispatches 'offline'. Restore by calling goOnline().
+  // We stash the original property descriptor so goOnline() can restore it
+  // reliably — `delete Navigator.prototype.onLine` is not guaranteed to
+  // reinstate the native getter on all browsers.
+  goOffline() {
+    if (window.__qa._realFetch) return; // already offline
+    window.__qa._realFetch = window.fetch;
+    window.__qa._onLineDesc = Object.getOwnPropertyDescriptor(Navigator.prototype, "onLine");
+    window.fetch = () => Promise.reject(new TypeError("__qa offline"));
+    Object.defineProperty(Navigator.prototype, "onLine", { configurable: true, get: () => false });
+    window.dispatchEvent(new Event("offline"));
+  },
+  goOnline() {
+    if (!window.__qa._realFetch) return;
+    window.fetch = window.__qa._realFetch;
+    window.__qa._realFetch = null;
+    if (window.__qa._onLineDesc) {
+      Object.defineProperty(Navigator.prototype, "onLine", window.__qa._onLineDesc);
+      window.__qa._onLineDesc = null;
+    }
+    window.dispatchEvent(new Event("online"));
+  },
+};
