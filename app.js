@@ -599,6 +599,7 @@ function autoSetTeamFromRole(fieldId) {
   document.querySelectorAll('[data-field="' + teamField + '"]').forEach(c => {
     c.classList.toggle("selected", c.dataset.value === team);
   });
+  clearInvalid(teamField);
   autoSetWinLoss();
 }
 
