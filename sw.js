@@ -8,16 +8,16 @@
 // Bump CACHE_VERSION whenever the shell changes. No build step — a literal
 // constant is the source of truth.
 
-const CACHE_VERSION = "v1";
+const CACHE_VERSION = "v2";
 const CACHE_NAME = `botc-logger-${CACHE_VERSION}`;
 const SHELL = [
-  "/",
-  "/index.html",
-  "/app.js",
-  "/styles.css",
-  "/manifest.webmanifest",
-  "/icons/icon-192.png",
-  "/icons/icon-512.png",
+  "/botc-logger/",
+  "/botc-logger/index.html",
+  "/botc-logger/app.js",
+  "/botc-logger/styles.css",
+  "/botc-logger/manifest.webmanifest",
+  "/botc-logger/icons/icon-192.png",
+  "/botc-logger/icons/icon-512.png",
 ];
 
 self.addEventListener("install", (event) => {
@@ -48,7 +48,7 @@ function isAppsScript(url) {
 
 function networkFirstNavigation(event) {
   return fetch(event.request)
-    .catch(() => caches.match("/index.html"));
+    .catch(() => caches.match("/botc-logger/index.html"));
 }
 
 function staleWhileRevalidate(event) {
