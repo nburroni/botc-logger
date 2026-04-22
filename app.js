@@ -81,6 +81,11 @@ document.addEventListener("DOMContentLoaded", () => {
   setupAutocomplete("loric2",       () => mergeUnique(ALL_LORICS, DYNAMIC.lorics));
   setupAutocomplete("specialWinType", () => mergeUnique(ALL_ROLES, DYNAMIC.roles));
 
+  // Live-clear validation errors as required fields are filled
+  ["date", "numPlayers", "script", "startingRole", "startDemon"].forEach(id => {
+    document.getElementById(id).addEventListener("input", () => clearInvalid(id));
+  });
+
   document.addEventListener("click", (e) => {
     if (!e.target.closest(".autocomplete-wrapper"))
       document.querySelectorAll(".autocomplete-list").forEach(l => l.classList.remove("show"));
@@ -563,6 +568,7 @@ function showSuggestions(input, list, optionsFn) {
 function selectAC(el, fieldId) {
   document.getElementById(fieldId).value = el.textContent;
   el.closest(".autocomplete-list").classList.remove("show");
+  clearInvalid(fieldId);
   // Auto-set team when a role is selected
   autoSetTeamFromRole(fieldId);
   // Propagate to mid/end fields if this was the starting role
@@ -593,6 +599,7 @@ function autoSetTeamFromRole(fieldId) {
   document.querySelectorAll('[data-field="' + teamField + '"]').forEach(c => {
     c.classList.toggle("selected", c.dataset.value === team);
   });
+  clearInvalid(teamField);
   autoSetWinLoss();
 }
 
@@ -629,6 +636,7 @@ function selectChip(el) {
   const hidden = document.getElementById(field);
   if (hidden.value === value) { hidden.value = ""; }
   else { el.classList.add("selected"); hidden.value = value; }
+  if (hidden.value) clearInvalid(field);
   autoSetWinLoss();
   // Propagate starting team to mid/end team when they're empty
   if (field === "startingTeam") autoFillRoleFields();
@@ -645,7 +653,39 @@ function autoSetWinLoss() {
     document.querySelectorAll('[data-field="winLoss"]').forEach(c => {
       c.classList.toggle("selected", c.dataset.value === result);
     });
+    clearInvalid("winLoss");
   }
+}
+
+// ——— VALIDATION ———
+function markInvalid(id) {
+  const el = document.getElementById(id);
+  if (el) el.closest(".field")?.classList.add("field-invalid");
+}
+
+function clearInvalid(id) {
+  const el = document.getElementById(id);
+  if (el) el.closest(".field")?.classList.remove("field-invalid");
+}
+
+const REQUIRED_FIELDS = [
+  { id: "date",         label: "Date" },
+  { id: "numPlayers",   label: "Players" },
+  { id: "script",       label: "Script" },
+  { id: "startingRole", label: "Starting Role" },
+  { id: "startingTeam", label: "Starting Team" },
+  { id: "startDemon",   label: "Start Demon" },
+  { id: "winningTeam",  label: "Winning Team" },
+  { id: "winLoss",      label: "Result" },
+];
+
+function validateForm() {
+  return REQUIRED_FIELDS.filter(({ id }) => {
+    const el = document.getElementById(id);
+    if (!el) return false;
+    if (id === "numPlayers") return !(parseInt(el.value) > 0);
+    return !el.value.trim();
+  });
 }
 
 // ——— COLLAPSIBLE SECTIONS ———
@@ -664,6 +704,14 @@ function toggleSection(name) {
 // ——— SUBMIT ———
 async function submitGame(e) {
   e.preventDefault();
+
+  const failures = validateForm();
+  if (failures.length > 0) {
+    failures.forEach(f => markInvalid(f.id));
+    showToast("Required: " + failures.map(f => f.label).join(", "), "error");
+    return;
+  }
+
   const btn = document.getElementById("submitBtn");
   btn.classList.add("loading"); btn.disabled = true;
 
