@@ -568,6 +568,7 @@ function showSuggestions(input, list, optionsFn) {
 function selectAC(el, fieldId) {
   document.getElementById(fieldId).value = el.textContent;
   el.closest(".autocomplete-list").classList.remove("show");
+  clearInvalid(fieldId);
   // Auto-set team when a role is selected
   autoSetTeamFromRole(fieldId);
   // Propagate to mid/end fields if this was the starting role
@@ -634,7 +635,7 @@ function selectChip(el) {
   const hidden = document.getElementById(field);
   if (hidden.value === value) { hidden.value = ""; }
   else { el.classList.add("selected"); hidden.value = value; }
-  clearInvalid(field);
+  if (hidden.value) clearInvalid(field);
   autoSetWinLoss();
   // Propagate starting team to mid/end team when they're empty
   if (field === "startingTeam") autoFillRoleFields();
