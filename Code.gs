@@ -52,7 +52,8 @@ const COL = {
   FABLED_NOTES: 24,   // X
   LORIC_1: 25,        // Y
   LORIC_2: 26,        // Z
-  LORIC_NOTES: 27     // AA
+  LORIC_NOTES: 27,    // AA
+  SPECIAL_WIN_TYPE: 35 // AI
 };
 
 /**
@@ -78,7 +79,7 @@ function doGet(e) {
       return jsonpResponse({ options: getEmptyOptions() }, callback);
     }
 
-    const data = sheet.getRange(3, 1, lastRow - 2, 27).getValues();
+    const data = sheet.getRange(3, 1, lastRow - 2, 35).getValues();
 
     const options = {
       events: uniqueNonEmpty(data.map(r => r[COL.EVENT - 1])),
@@ -130,8 +131,8 @@ function doPost(e) {
       return jsonResponse({ error: "Sheet '" + DATA_SHEET_NAME + "' not found." });
     }
 
-    // Build the row array matching columns A–AA
-    const row = new Array(27).fill("");
+    // Build the row array matching columns A–AI
+    const row = new Array(35).fill("");
 
     row[COL.DATE - 1]           = body.date || "";
     row[COL.EVENT - 1]          = body.event || "";
@@ -159,7 +160,8 @@ function doPost(e) {
     row[COL.FABLED_NOTES - 1]   = body.fabledNotes || "";
     row[COL.LORIC_1 - 1]        = body.loric1 || "";
     row[COL.LORIC_2 - 1]        = body.loric2 || "";
-    row[COL.LORIC_NOTES - 1]    = body.loricNotes || "";
+    row[COL.LORIC_NOTES - 1]     = body.loricNotes || "";
+    row[COL.SPECIAL_WIN_TYPE - 1] = body.specialWinType || "";
 
     // `appendRow` / `getLastRow` count rows that only have data-validation or
     // formatting, so on this sheet they land ~1000 rows below the real data.
@@ -167,7 +169,7 @@ function doPost(e) {
     // next row directly.
     const lastDataRow = getLastDataRow(sheet, COL.DATE);
     const newRow = Math.max(lastDataRow + 1, 3); // data starts at row 3
-    sheet.getRange(newRow, 1, 1, 27).setValues([row]);
+    sheet.getRange(newRow, 1, 1, 35).setValues([row]);
 
     if (body.date) {
       sheet.getRange(newRow, COL.DATE).setNumberFormat("d MMM yyyy");
