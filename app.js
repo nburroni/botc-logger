@@ -163,7 +163,10 @@ async function queueAttempt(payload) {
   try {
     const resp = await fetch(ENDPOINT, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      // text/plain keeps this a CORS "simple request" — no preflight OPTIONS,
+      // which Apps Script web apps do not handle. The body is still JSON;
+      // Apps Script parses it via e.postData.contents regardless of Content-Type.
+      headers: { "Content-Type": "text/plain" },
       body: JSON.stringify(payload),
       redirect: "follow",
     });
