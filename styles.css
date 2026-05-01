@@ -301,3 +301,70 @@ textarea { resize: vertical; min-height: 60px; font-family: inherit; }
 }
 .queue-row-actions button.danger:hover { border-color: var(--evil); color: var(--evil); }
 .header-logo { width: 28px; height: 28px; vertical-align: middle; margin-right: 8px; }
+
+/* ——— TAB BAR ——— */
+.tab-bar {
+  display: flex;
+  max-width: 480px;
+  margin: 0 auto;
+  padding: 12px 16px 0;
+  gap: 8px;
+}
+.tab {
+  flex: 1; padding: 10px 0;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); color: var(--text-muted);
+  font-size: 14px; font-weight: 600; cursor: pointer; transition: all 0.2s;
+}
+.tab.active {
+  background: var(--accent); border-color: var(--accent); color: white;
+}
+
+/* ——— RECENT LIST ——— */
+.recent-container { max-width: 480px; margin: 0 auto; padding: 12px 16px; }
+.recent-row {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 12px 14px;
+  margin-bottom: 8px; cursor: pointer; transition: background 0.15s;
+}
+.recent-row:active { background: var(--surface-hover); }
+.recent-row-line1 { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+.recent-row-script { font-size: 14px; font-weight: 600; color: var(--text); }
+.recent-badge {
+  font-size: 12px; font-weight: 700; padding: 2px 8px;
+  border-radius: 4px; border: 1px solid;
+}
+.recent-badge.win  { color: var(--win);  border-color: var(--win);  background: var(--good-bg); }
+.recent-badge.loss { color: var(--loss); border-color: var(--loss); background: var(--evil-bg); }
+.recent-row-line2 { font-size: 12px; color: var(--text-muted); display: flex; flex-wrap: wrap; gap: 8px; }
+.recent-role-good { color: var(--good); font-weight: 500; }
+.recent-role-evil { color: var(--evil); font-weight: 500; }
+.recent-row-line3 {
+  font-size: 11px; color: var(--text-muted);
+  border-top: 1px solid var(--border); margin-top: 7px; padding-top: 7px;
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+}
+.recent-role-change { display: flex; align-items: center; gap: 4px; }
+
+/* ——— LOAD MORE ——— */
+.load-more-btn {
+  width: 100%; padding: 12px; background: none;
+  border: 1px dashed var(--border); border-radius: var(--radius-sm);
+  color: var(--accent); font-size: 14px; font-weight: 500;
+  cursor: pointer; transition: all 0.2s; margin-top: 4px;
+}
+.load-more-btn:hover { border-color: var(--accent); background: var(--surface); }
+.load-more-btn.hidden { display: none; }
+.load-more-btn.loading { color: var(--text-muted); pointer-events: none; }
+
+/* ——— GAME DETAIL SHEET ——— */
+.detail-row {
+  display: flex; justify-content: space-between; align-items: flex-start;
+  padding: 8px 0; border-bottom: 1px solid var(--border); gap: 12px;
+}
+.detail-row:last-child { border-bottom: none; }
+.detail-label { font-size: 12px; color: var(--text-muted); flex-shrink: 0; }
+.detail-value { font-size: 13px; color: var(--text); text-align: right; word-break: break-word; }
+
+/* ——— MISC ——— */
+.no-games-msg { text-align: center; color: var(--text-muted); font-size: 14px; padding: 24px 0; }
