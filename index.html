@@ -40,6 +40,12 @@
   <button type="button" class="reset-btn" id="resetBtn" onclick="clearSession()" title="Clear session / re-connect">&#x21bb;</button>
 </div>
 
+<!-- TAB BAR -->
+<div class="tab-bar">
+  <button class="tab active" id="tabLog" onclick="switchTab('log')">Log Game</button>
+  <button class="tab" id="tabRecent" onclick="switchTab('recent')">Recent</button>
+</div>
+
 <!-- FORM -->
 <div class="form-container">
   <form id="gameForm" onsubmit="submitGame(event)">
@@ -293,6 +299,12 @@
   </form>
 </div>
 
+<!-- RECENT GAMES -->
+<div id="recentContainer" class="recent-container hidden">
+  <div id="recentList"></div>
+  <button type="button" class="load-more-btn hidden" id="loadMoreBtn" onclick="loadMoreGames()">Load more</button>
+</div>
+
 <div class="toast" id="toast"></div>
 
     <div class="sheet-backdrop hidden" id="queueSheetBackdrop" onclick="closeQueueSheet()"></div>
@@ -307,6 +319,15 @@
         <button type="button" class="retry-all-btn hidden" id="retryAllBtn" onclick="retryAll()">Retry all</button>
       </div>
     </div>
+<div class="sheet-backdrop hidden" id="gameDetailBackdrop" onclick="closeGameDetail()"></div>
+<div class="sheet hidden" id="gameDetailSheet" role="dialog" aria-modal="true" aria-label="Game details">
+  <div class="sheet-handle"></div>
+  <div class="sheet-header">
+    <h2 id="gameDetailTitle">Game Details</h2>
+    <button type="button" class="sheet-close" onclick="closeGameDetail()" aria-label="Close">&times;</button>
+  </div>
+  <div class="sheet-body" id="gameDetailBody"></div>
+</div>
 <script src="app.js"></script>
     <script>
       if ("serviceWorker" in navigator) {
