@@ -74,6 +74,25 @@ function doGet(e) {
       return jsonpResponse({ error: "Sheet '" + DATA_SHEET_NAME + "' not found. Check DATA_SHEET_NAME in Code.gs." }, callback);
     }
 
+    if (e.parameter.action === "history") {
+      const lastDataRow = getLastDataRow(sheet, COL.DATE);
+      if (lastDataRow < 3) {
+        return jsonResponse({ rows: [], total: 0, hasMore: false });
+      }
+      const all = sheet.getRange(3, 1, lastDataRow - 2, 35).getValues()
+        .filter(r => r[COL.DATE - 1] !== "" && r[COL.DATE - 1] !== null);
+      const total  = all.length;
+      const rawLimit = parseInt(e.parameter.limit);
+      const limit    = Math.min(Math.max(isNaN(rawLimit) ? 10 : rawLimit, 1), 50);
+      const offset = Math.max(parseInt(e.parameter.offset) || 0, 0);
+      const slice  = all.slice().reverse().slice(offset, offset + limit);
+      return jsonResponse({
+        rows:    slice.map(rowToHistoryEntry),
+        total:   total,
+        hasMore: offset + limit < total,
+      });
+    }
+
     const lastRow = sheet.getLastRow();
     if (lastRow < 3) {
       return jsonpResponse({ options: getEmptyOptions() }, callback);
@@ -215,6 +234,46 @@ function getEmptyOptions() {
     demons: [],
     fabled: [],
     lorics: []
+  };
+}
+
+function rowToHistoryEntry(row) {
+  const dateVal = row[COL.DATE - 1];
+  let dateStr = "";
+  if (dateVal instanceof Date && !isNaN(dateVal)) {
+    dateStr = Utilities.formatDate(dateVal, Session.getScriptTimeZone(), "d MMM yyyy");
+  } else if (dateVal) {
+    dateStr = String(dateVal);
+  }
+  return {
+    date:           dateStr,
+    script:         String(row[COL.SCRIPT - 1]          || ""),
+    startingRole:   String(row[COL.STARTING_ROLE - 1]   || ""),
+    startingTeam:   String(row[COL.STARTING_TEAM - 1]   || ""),
+    winLoss:        String(row[COL.WIN_LOSS - 1]         || ""),
+    winningTeam:    String(row[COL.WINNING_TEAM - 1]     || ""),
+    numPlayers:     Number(row[COL.NUM_PLAYERS - 1])     || 0,
+    startDemon:     String(row[COL.START_DEMON - 1]      || ""),
+    endDemon:       String(row[COL.END_DEMON - 1]        || ""),
+    midGameRole:    String(row[COL.MID_GAME_ROLE - 1]    || ""),
+    midGameTeam:    String(row[COL.MID_GAME_TEAM - 1]    || ""),
+    endingRole:     String(row[COL.ENDING_ROLE - 1]      || ""),
+    endingTeam:     String(row[COL.ENDING_TEAM - 1]      || ""),
+    specialWinType: String(row[COL.SPECIAL_WIN_TYPE - 1] || ""),
+    event:          String(row[COL.EVENT - 1]            || ""),
+    location:       String(row[COL.LOCATION - 1]         || ""),
+    liveOnline:     String(row[COL.LIVE_ONLINE - 1]      || ""),
+    storyteller:    String(row[COL.STORYTELLER - 1]      || ""),
+    lastNight:      String(row[COL.LAST_NIGHT - 1]       || ""),
+    roleNotes:      String(row[COL.ROLE_NOTES - 1]       || ""),
+    livedDiedNotes: String(row[COL.LIVED_DIED_NOTES - 1] || ""),
+    fabled1:        String(row[COL.FABLED_1 - 1]         || ""),
+    fabled2:        String(row[COL.FABLED_2 - 1]         || ""),
+    fabled3:        String(row[COL.FABLED_3 - 1]         || ""),
+    fabledNotes:    String(row[COL.FABLED_NOTES - 1]     || ""),
+    loric1:         String(row[COL.LORIC_1 - 1]          || ""),
+    loric2:         String(row[COL.LORIC_2 - 1]          || ""),
+    loricNotes:     String(row[COL.LORIC_NOTES - 1]      || ""),
   };
 }
 
