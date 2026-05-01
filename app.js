@@ -471,6 +471,11 @@ function clearSession(toastMsg) {
   deleteCookie(AUTH_KEY);
   ENDPOINT = "";
   AUTH_HASH = "";
+  _recentRows    = [];
+  _recentOffset  = 0;
+  _recentHasMore = false;
+  _recentLoaded  = false;
+  _recentLoading = false;
   DYNAMIC = { events: [], locations: [], scripts: [], storytellers: [], roles: [], demons: [], fabled: [], lorics: [] };
   document.getElementById("setupUrl").value = "";
   document.getElementById("setupPassword").value = "";
@@ -915,3 +920,194 @@ window.__qa = {
     window.dispatchEvent(new Event("online"));
   },
 };
+
+// ——— RECENT GAMES ———
+
+let _recentRows    = [];    // accumulated rows across all fetched pages
+let _recentOffset  = 0;     // next fetch offset
+let _recentHasMore = false;
+let _recentLoaded  = false; // true after first successful fetch
+let _recentLoading = false; // true while a fetch is in flight
+
+function switchTab(tab) {
+  if (!ENDPOINT) return; // not yet connected; setup overlay covers the tab bar
+  closeGameDetail();
+  document.getElementById("tabLog").classList.toggle("active",    tab === "log");
+  document.getElementById("tabRecent").classList.toggle("active", tab === "recent");
+  document.querySelector(".form-container").classList.toggle("hidden", tab === "recent");
+  document.getElementById("recentContainer").classList.toggle("hidden", tab !== "recent");
+  if (tab === "recent" && !_recentLoaded) loadRecentGames(0);
+}
+
+async function loadRecentGames(offset) {
+  if (_recentLoading) return;
+  _recentLoading = true;
+  const btn  = document.getElementById("loadMoreBtn");
+  const list = document.getElementById("recentList");
+  if (offset === 0) {
+    list.innerHTML = "<p class='no-games-msg'>Loading…</p>";
+  } else {
+    btn.textContent = "Loading…";
+    btn.classList.add("loading");
+  }
+  try {
+    const url  = ENDPOINT + "?key=" + encodeURIComponent(AUTH_HASH)
+               + "&action=history&limit=10&offset=" + offset;
+    const resp = await fetch(url, { redirect: "follow" });
+    const data = await resp.json();
+    if (data.error === "Unauthorized") {
+      clearSession("Session expired — please reconnect");
+      return;
+    }
+    if (data.error) {
+      showToast(data.error, "error");
+      if (offset === 0) list.innerHTML = "<p class='no-games-msg'>Could not load games.</p>";
+      _restoreLoadMore();
+      return;
+    }
+    _recentRows    = _recentRows.concat(data.rows);
+    _recentOffset  = offset + data.rows.length;
+    _recentHasMore = data.hasMore;
+    _recentLoaded  = true;
+    renderRecentGames();
+  } catch (err) {
+    showToast("Could not load games — check connection", "error");
+    if (offset === 0) list.innerHTML = "<p class='no-games-msg'>Could not load games.</p>";
+    _restoreLoadMore();
+  } finally {
+    _recentLoading = false;
+  }
+}
+
+function _restoreLoadMore() {
+  const btn = document.getElementById("loadMoreBtn");
+  btn.textContent = "Load more";
+  btn.classList.remove("loading");
+}
+
+function loadMoreGames() {
+  loadRecentGames(_recentOffset);
+}
+
+function renderRecentGames() {
+  const list = document.getElementById("recentList");
+  const btn  = document.getElementById("loadMoreBtn");
+  if (_recentRows.length === 0) {
+    list.innerHTML = "<p class='no-games-msg'>No games logged yet.</p>";
+    btn.classList.add("hidden");
+    return;
+  }
+  list.innerHTML = _recentRows.map((row, i) => buildRecentRowHTML(row, i)).join("");
+  if (_recentHasMore) {
+    btn.classList.remove("hidden");
+    _restoreLoadMore();
+  } else {
+    btn.classList.add("hidden");
+  }
+}
+
+function buildRecentRowHTML(row, index) {
+  const isWin      = row.winLoss === "W";
+  const badgeClass = isWin ? "win" : "loss";
+  const badgeText  = isWin ? "WIN" : "LOSS";
+  const roleClass  = row.startingTeam === "Evil" ? "recent-role-evil" : "recent-role-good";
+
+  let line3 = "";
+  const hasMidRole = row.midGameRole && row.midGameRole.trim();
+  const hasSpecial = row.specialWinType && row.specialWinType.trim();
+  if (hasMidRole || hasSpecial) {
+    const parts = [];
+    if (hasMidRole) {
+      const fromClass = row.startingTeam === "Evil" ? "recent-role-evil" : "recent-role-good";
+      const toClass   = row.midGameTeam  === "Evil" ? "recent-role-evil" : "recent-role-good";
+      parts.push(
+        `<span class="recent-role-change">` +
+        `🔄 <span class="${fromClass}">${escHtml(row.startingRole)}</span>` +
+        ` → ` +
+        `<span class="${toClass}">${escHtml(row.midGameRole)}</span>` +
+        `</span>`
+      );
+    }
+    if (hasSpecial) {
+      parts.push(
+        `<span>⭐ <span style="color:var(--accent);font-weight:500">${escHtml(row.specialWinType)}</span></span>`
+      );
+    }
+    line3 = `<div class="recent-row-line3">${parts.join('<span style="color:var(--border)"> · </span>')}</div>`;
+  }
+
+  return (
+    `<div class="recent-row" onclick="openGameDetail(${index})">` +
+    `<div class="recent-row-line1">` +
+    `<span class="recent-row-script">${escHtml(row.script)}</span>` +
+    `<span class="recent-badge ${badgeClass}">${badgeText}</span>` +
+    `</div>` +
+    `<div class="recent-row-line2">` +
+    `<span>🎭 <span class="${roleClass}">${escHtml(row.startingRole)}</span></span>` +
+    `<span>😈 ${escHtml(row.startDemon)}</span>` +
+    `<span>👥 ${row.numPlayers}</span>` +
+    `<span>📅 ${escHtml(row.date)}</span>` +
+    `</div>` +
+    line3 +
+    `</div>`
+  );
+}
+
+const DETAIL_LABELS = [
+  ["date",           "Date"],
+  ["script",         "Script"],
+  ["event",          "Event"],
+  ["location",       "Location"],
+  ["liveOnline",     "Format"],
+  ["storyteller",    "Storyteller"],
+  ["numPlayers",     "Players"],
+  ["startingRole",   "Starting Role"],
+  ["startingTeam",   "Starting Team"],
+  ["midGameRole",    "Mid Game Role"],
+  ["midGameTeam",    "Mid Game Team"],
+  ["endingRole",     "Ending Role"],
+  ["endingTeam",     "Ending Team"],
+  ["startDemon",     "Start Demon"],
+  ["endDemon",       "End Demon"],
+  ["winningTeam",    "Winning Team"],
+  ["winLoss",        "Result"],
+  ["lastNight",      "Last Day"],
+  ["specialWinType", "Special Win Type"],
+  ["roleNotes",      "Role Notes"],
+  ["livedDiedNotes", "Lived / Died / Executed / Exiled"],
+  ["fabled1",        "Fabled 1"],
+  ["fabled2",        "Fabled 2"],
+  ["fabled3",        "Fabled 3"],
+  ["fabledNotes",    "Fabled Notes"],
+  ["loric1",         "Loric 1"],
+  ["loric2",         "Loric 2"],
+  ["loricNotes",     "Loric Notes"],
+];
+
+function openGameDetail(index) {
+  const row = _recentRows[index];
+  if (!row) return;
+  document.getElementById("gameDetailTitle").textContent = row.script;
+  document.getElementById("gameDetailBody").innerHTML = DETAIL_LABELS
+    .filter(([key]) => {
+      const v = row[key];
+      return v !== undefined && v !== "" && v !== 0;
+    })
+    .map(([key, label]) => {
+      const v = row[key];
+      return (
+        `<div class="detail-row">` +
+        `<span class="detail-label">${escHtml(label)}</span>` +
+        `<span class="detail-value">${escHtml(String(v))}</span>` +
+        `</div>`
+      );
+    })
+    .join("");
+  document.getElementById("gameDetailSheet").classList.remove("hidden");
+  document.getElementById("gameDetailBackdrop").classList.remove("hidden");
+}
+
+function closeGameDetail() {
+  document.getElementById("gameDetailSheet").classList.add("hidden");
+  document.getElementById("gameDetailBackdrop").classList.add("hidden");
+}
