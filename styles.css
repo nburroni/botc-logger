@@ -302,6 +302,10 @@ textarea { resize: vertical; min-height: 60px; font-family: inherit; }
 .queue-row-actions button.danger:hover { border-color: var(--evil); color: var(--evil); }
 .header-logo { width: 28px; height: 28px; vertical-align: middle; margin-right: 8px; }
 
+/* ——— TAB / RECENT VISIBILITY ——— */
+.form-container.hidden    { display: none; }
+.recent-container.hidden  { display: none; }
+
 /* ——— TAB BAR ——— */
 .tab-bar {
   display: flex;
