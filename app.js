@@ -1048,25 +1048,29 @@ function buildRecentRowHTML(row, index) {
   const badgeText  = isWin ? "WIN" : "LOSS";
   const roleClass  = row.startingTeam === "Evil" ? "recent-role-evil" : "recent-role-good";
 
+  // Role-change detection: only show when a role actually changed.
+  // startingRole is auto-filled into mid/end on submit, so equal values mean no real change.
+  const startRole  = (row.startingRole || "").trim();
+  const midRole    = (row.midGameRole  || "").trim();
+  const endRole    = (row.endingRole   || "").trim();
+  const midChanged = midRole && midRole !== startRole;
+  const prevRole   = midChanged ? midRole : startRole; // baseline for end-change comparison
+  const endChanged = endRole && endRole !== prevRole;
+  const hasSpecial = (row.specialWinType || "").trim();
+
   let line3 = "";
-  const hasMidRole = row.midGameRole && row.midGameRole.trim();
-  const hasSpecial = row.specialWinType && row.specialWinType.trim();
-  if (hasMidRole || hasSpecial) {
+  if (midChanged || endChanged || hasSpecial) {
     const parts = [];
-    if (hasMidRole) {
-      const fromClass = row.startingTeam === "Evil" ? "recent-role-evil" : "recent-role-good";
-      const toClass   = row.midGameTeam  === "Evil" ? "recent-role-evil" : "recent-role-good";
-      parts.push(
-        `<span class="recent-role-change">` +
-        `🔄 <span class="${fromClass}">${escHtml(row.startingRole)}</span>` +
-        ` → ` +
-        `<span class="${toClass}">${escHtml(row.midGameRole)}</span>` +
-        `</span>`
-      );
+    if (midChanged || endChanged) {
+      const rc = t => t === "Evil" ? "recent-role-evil" : "recent-role-good";
+      let chain = `<span class="${rc(row.startingTeam)}">${escHtml(startRole)}</span>`;
+      if (midChanged) chain += ` → <span class="${rc(row.midGameTeam)}">${escHtml(midRole)}</span>`;
+      if (endChanged) chain += ` → <span class="${rc(row.endingTeam)}">${escHtml(endRole)}</span>`;
+      parts.push(`<span class="recent-role-change">🔄 ${chain}</span>`);
     }
     if (hasSpecial) {
       parts.push(
-        `<span>⭐ <span style="color:var(--accent);font-weight:500">${escHtml(row.specialWinType)}</span></span>`
+        `<span>⭐ <span style="color:var(--accent);font-weight:500">${escHtml(hasSpecial)}</span></span>`
       );
     }
     line3 = `<div class="recent-row-line3">${parts.join('<span style="color:var(--border)"> · </span>')}</div>`;
