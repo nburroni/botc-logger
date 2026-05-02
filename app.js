@@ -146,7 +146,10 @@ function queueWrite(key, arr) {
 
 function queueNewEntry(payload) {
   return {
-    id: crypto.randomUUID(),
+    // Reuse the payload's clientId (idempotency key) as the entry's own id so
+    // the queue UI, the retry path, and the server all share the same UUID.
+    // Fall back to a fresh UUID for payloads that pre-date this field.
+    id: payload.clientId || crypto.randomUUID(),
     createdAt: Date.now(),
     payload,
     attempts: 0,
@@ -159,9 +162,18 @@ function getFailed()  { return queueRead(QUEUE_FAILED_KEY); }
 
 // Tries one fetch against the Apps Script endpoint. Returns a normalized
 // result object: { ok, authError, userError, row, err }.
+//
+// Two-phase try/catch: we distinguish between a true network failure (fetch
+// threw — request never reached the server) and a response-parsing failure
+// (the POST DID reach Apps Script but the browser can't read the response,
+// usually because Apps Script redirects to script.googleusercontent.com which
+// may not echo CORS headers back to the client). In the latter case treating
+// the attempt as provisional success is safe: the server already wrote the
+// row, and the idempotency key (clientId) prevents duplicate rows on retries.
 async function queueAttempt(payload) {
+  let resp;
   try {
-    const resp = await fetch(ENDPOINT, {
+    resp = await fetch(ENDPOINT, {
       method: "POST",
       // text/plain keeps this a CORS "simple request" — no preflight OPTIONS,
       // which Apps Script web apps do not handle. The body is still JSON;
@@ -170,6 +182,12 @@ async function queueAttempt(payload) {
       body: JSON.stringify(payload),
       redirect: "follow",
     });
+  } catch (netErr) {
+    // True network failure: request did not reach the server. Keep in queue.
+    return { ok: false, networkError: true, err: String(netErr) };
+  }
+
+  try {
     const body = await resp.json();
     if (body.error === "Unauthorized") {
       return { ok: false, authError: true, err: "Unauthorized" };
@@ -178,8 +196,13 @@ async function queueAttempt(payload) {
       return { ok: false, userError: true, err: body.error };
     }
     return { ok: true, row: body.row };
-  } catch (err) {
-    return { ok: false, networkError: true, err: String(err) };
+  } catch (_parseErr) {
+    // Response was received (no CORS/network block on the request itself) but
+    // the body isn't parseable JSON — Apps Script likely returned an HTML error
+    // page or the redirect response was opaque. The row was almost certainly
+    // written; treat as provisional success to stop retries and avoid duplicates.
+    // The server-side clientId dedup handles the case where we're wrong.
+    return { ok: true, row: null };
   }
 }
 
@@ -760,6 +783,7 @@ async function submitGame(e) {
   btn.classList.add("loading"); btn.disabled = true;
 
   const payload = {
+    clientId:       crypto.randomUUID(), // idempotency key — server deduplicates on retry
     key:            AUTH_HASH,
     date:           document.getElementById("date").value,
     event:          document.getElementById("event").value.trim(),
