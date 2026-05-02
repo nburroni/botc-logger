@@ -385,11 +385,11 @@ function renderQueueRow(entry, bucket) {
   const deleteLabel = _armedForDelete.has(safeId) ? "Tap again to confirm" : "Delete";
   const armedAttr = _armedForDelete.has(safeId) ? ' data-armed="1"' : "";
   return `
-    <div class="${cls}" data-id="${safeId}">
+    <div class="${cls}" data-id="${safeId}" onclick="openQueueDetail('${safeId}', '${safeBucket}')">
       <div class="queue-row-summary">${escHtml(summarizeEntry(entry))}</div>
       <div class="queue-row-meta">${new Date(entry.createdAt).toLocaleString()} · attempts: ${entry.attempts}</div>
       ${err}
-      <div class="queue-row-actions">
+      <div class="queue-row-actions" onclick="event.stopPropagation()">
         <button type="button" onclick="retryQueued('${safeId}', '${safeBucket}')">Retry</button>
         <button type="button" class="danger"${armedAttr} onclick="confirmDeleteQueued('${safeId}', '${safeBucket}')">${deleteLabel}</button>
       </div>
@@ -419,6 +419,42 @@ function renderQueueSheet() {
   // botc:queue-changed event fired before a page reload picks up Task 3.2's
   // markup doesn't throw and halt the drain.
   document.getElementById("retryAllBtn")?.classList.toggle("hidden", p.length + f.length === 0);
+}
+
+function openQueueDetail(id, bucket) {
+  const list  = bucket === "failed" ? getFailed() : getPending();
+  const entry = list.find(e => String(e.id).replace(/[^0-9a-f-]/gi, "") === id);
+  if (!entry) return;
+
+  const p = entry.payload || {};
+  document.getElementById("gameDetailTitle").textContent = p.script || "Queued game";
+
+  const statusRows = [
+    `<div class="detail-row"><span class="detail-label">Status</span><span class="detail-value">${bucket === "failed" ? "Failed" : "Pending"}</span></div>`,
+    `<div class="detail-row"><span class="detail-label">Queued</span><span class="detail-value">${new Date(entry.createdAt).toLocaleString()}</span></div>`,
+    `<div class="detail-row"><span class="detail-label">Attempts</span><span class="detail-value">${entry.attempts}</span></div>`,
+    entry.lastError ? `<div class="detail-row"><span class="detail-label">Last error</span><span class="detail-value">${escHtml(entry.lastError)}</span></div>` : "",
+  ].filter(Boolean).join("");
+
+  const dataRows = DETAIL_LABELS
+    .filter(([key]) => {
+      const v = p[key];
+      return v !== undefined && v !== "" && v !== 0;
+    })
+    .map(([key, label]) =>
+      `<div class="detail-row">` +
+      `<span class="detail-label">${escHtml(label)}</span>` +
+      `<span class="detail-value">${escHtml(String(p[key]))}</span>` +
+      `</div>`
+    )
+    .join("");
+
+  document.getElementById("gameDetailBody").innerHTML =
+    `<div class="detail-section-title">Queue status</div>` + statusRows +
+    `<div class="detail-section-title">Game data</div>` + dataRows;
+
+  document.getElementById("gameDetailSheet").classList.remove("hidden");
+  document.getElementById("gameDetailBackdrop").classList.remove("hidden");
 }
 
 // Note: btnEl param removed — arming state lives in _armedForDelete/_armTimers, not the DOM node.

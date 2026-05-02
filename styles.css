@@ -288,7 +288,9 @@ textarea { resize: vertical; min-height: 60px; font-family: inherit; }
   border-radius: var(--radius-sm);
   padding: 12px;
   display: flex; flex-direction: column; gap: 8px;
+  cursor: pointer; transition: background 0.15s;
 }
+.queue-row:active { background: var(--surface-hover); }
 .queue-row.failed { border-color: var(--evil); }
 .queue-row-summary { font-size: 13px; color: var(--text); }
 .queue-row-meta { font-size: 11px; color: var(--text-muted); }
@@ -362,6 +364,12 @@ textarea { resize: vertical; min-height: 60px; font-family: inherit; }
 .load-more-btn.loading { color: var(--text-muted); pointer-events: none; }
 
 /* ——— GAME DETAIL SHEET ——— */
+.detail-section-title {
+  font-size: 11px; font-weight: 700; letter-spacing: 0.06em;
+  text-transform: uppercase; color: var(--text-muted);
+  padding: 10px 0 4px; margin-top: 4px;
+}
+.detail-section-title:first-child { margin-top: 0; padding-top: 0; }
 .detail-row {
   display: flex; justify-content: space-between; align-items: flex-start;
   padding: 8px 0; border-bottom: 1px solid var(--border); gap: 12px;
