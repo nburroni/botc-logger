@@ -53,6 +53,7 @@ const COL = {
   LORIC_1: 25,        // Y
   LORIC_2: 26,        // Z
   LORIC_NOTES: 27,    // AA
+  CLIENT_ID: 28,      // AB — idempotency key written by the client; prevents duplicate rows on retry
   SPECIAL_WIN_TYPE: 35 // AI
 };
 
@@ -150,6 +151,19 @@ function doPost(e) {
       return jsonResponse({ error: "Sheet '" + DATA_SHEET_NAME + "' not found." });
     }
 
+    // Idempotency: if the client supplies a clientId (UUID), check whether this
+    // exact request was already written. This prevents duplicate rows when the
+    // network delivers the POST but CORS or a redirect blocks the client from
+    // reading the response, causing it to retry the same request.
+    const clientId = String(body.clientId || "").trim();
+    const lastDataRow = getLastDataRow(sheet, COL.DATE);
+    if (clientId) {
+      const existingRow = findRowByClientId(sheet, clientId, lastDataRow);
+      if (existingRow) {
+        return jsonResponse({ success: true, row: existingRow });
+      }
+    }
+
     // Build the row array matching columns A–AI
     const row = new Array(35).fill("");
 
@@ -181,12 +195,12 @@ function doPost(e) {
     row[COL.LORIC_2 - 1]        = body.loric2 || "";
     row[COL.LORIC_NOTES - 1]     = body.loricNotes || "";
     row[COL.SPECIAL_WIN_TYPE - 1] = body.specialWinType || "";
+    row[COL.CLIENT_ID - 1]       = clientId; // store idempotency key (col AB)
 
     // `appendRow` / `getLastRow` count rows that only have data-validation or
     // formatting, so on this sheet they land ~1000 rows below the real data.
     // Instead, find the last row that actually has a DATE value and write the
     // next row directly.
-    const lastDataRow = getLastDataRow(sheet, COL.DATE);
     const newRow = Math.max(lastDataRow + 1, 3); // data starts at row 3
     sheet.getRange(newRow, 1, 1, 35).setValues([row]);
 
@@ -235,6 +249,19 @@ function getEmptyOptions() {
     fabled: [],
     lorics: []
   };
+}
+
+// Scans column AB (CLIENT_ID) backwards from the last data row looking for
+// a matching clientId. Returns the 1-indexed sheet row number, or 0 if not
+// found. Searching backwards is faster because retries are recent.
+function findRowByClientId(sheet, clientId, lastDataRow) {
+  if (!clientId || lastDataRow < 3) return 0;
+  const numRows = lastDataRow - 2;
+  const vals = sheet.getRange(3, COL.CLIENT_ID, numRows, 1).getValues();
+  for (let i = vals.length - 1; i >= 0; i--) {
+    if (String(vals[i][0]).trim() === clientId) return i + 3; // convert to 1-indexed sheet row
+  }
+  return 0;
 }
 
 function rowToHistoryEntry(row) {

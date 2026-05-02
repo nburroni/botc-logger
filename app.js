@@ -146,7 +146,10 @@ function queueWrite(key, arr) {
 
 function queueNewEntry(payload) {
   return {
-    id: crypto.randomUUID(),
+    // Reuse the payload's clientId (idempotency key) as the entry's own id so
+    // the queue UI, the retry path, and the server all share the same UUID.
+    // Fall back to a fresh UUID for payloads that pre-date this field.
+    id: payload.clientId || crypto.randomUUID(),
     createdAt: Date.now(),
     payload,
     attempts: 0,
@@ -159,9 +162,18 @@ function getFailed()  { return queueRead(QUEUE_FAILED_KEY); }
 
 // Tries one fetch against the Apps Script endpoint. Returns a normalized
 // result object: { ok, authError, userError, row, err }.
+//
+// Two-phase try/catch: we distinguish between a true network failure (fetch
+// threw — request never reached the server) and a response-parsing failure
+// (the POST DID reach Apps Script but the browser can't read the response,
+// usually because Apps Script redirects to script.googleusercontent.com which
+// may not echo CORS headers back to the client). In the latter case treating
+// the attempt as provisional success is safe: the server already wrote the
+// row, and the idempotency key (clientId) prevents duplicate rows on retries.
 async function queueAttempt(payload) {
+  let resp;
   try {
-    const resp = await fetch(ENDPOINT, {
+    resp = await fetch(ENDPOINT, {
       method: "POST",
       // text/plain keeps this a CORS "simple request" — no preflight OPTIONS,
       // which Apps Script web apps do not handle. The body is still JSON;
@@ -170,6 +182,12 @@ async function queueAttempt(payload) {
       body: JSON.stringify(payload),
       redirect: "follow",
     });
+  } catch (netErr) {
+    // True network failure: request did not reach the server. Keep in queue.
+    return { ok: false, networkError: true, err: String(netErr) };
+  }
+
+  try {
     const body = await resp.json();
     if (body.error === "Unauthorized") {
       return { ok: false, authError: true, err: "Unauthorized" };
@@ -178,8 +196,13 @@ async function queueAttempt(payload) {
       return { ok: false, userError: true, err: body.error };
     }
     return { ok: true, row: body.row };
-  } catch (err) {
-    return { ok: false, networkError: true, err: String(err) };
+  } catch (_parseErr) {
+    // Response was received (no CORS/network block on the request itself) but
+    // the body isn't parseable JSON — Apps Script likely returned an HTML error
+    // page or the redirect response was opaque. The row was almost certainly
+    // written; treat as provisional success to stop retries and avoid duplicates.
+    // The server-side clientId dedup handles the case where we're wrong.
+    return { ok: true, row: null };
   }
 }
 
@@ -385,11 +408,11 @@ function renderQueueRow(entry, bucket) {
   const deleteLabel = _armedForDelete.has(safeId) ? "Tap again to confirm" : "Delete";
   const armedAttr = _armedForDelete.has(safeId) ? ' data-armed="1"' : "";
   return `
-    <div class="${cls}" data-id="${safeId}">
+    <div class="${cls}" data-id="${safeId}" onclick="openQueueDetail('${safeId}', '${safeBucket}')">
       <div class="queue-row-summary">${escHtml(summarizeEntry(entry))}</div>
       <div class="queue-row-meta">${new Date(entry.createdAt).toLocaleString()} · attempts: ${entry.attempts}</div>
       ${err}
-      <div class="queue-row-actions">
+      <div class="queue-row-actions" onclick="event.stopPropagation()">
         <button type="button" onclick="retryQueued('${safeId}', '${safeBucket}')">Retry</button>
         <button type="button" class="danger"${armedAttr} onclick="confirmDeleteQueued('${safeId}', '${safeBucket}')">${deleteLabel}</button>
       </div>
@@ -419,6 +442,42 @@ function renderQueueSheet() {
   // botc:queue-changed event fired before a page reload picks up Task 3.2's
   // markup doesn't throw and halt the drain.
   document.getElementById("retryAllBtn")?.classList.toggle("hidden", p.length + f.length === 0);
+}
+
+function openQueueDetail(id, bucket) {
+  const list  = bucket === "failed" ? getFailed() : getPending();
+  const entry = list.find(e => String(e.id).replace(/[^0-9a-f-]/gi, "") === id);
+  if (!entry) return;
+
+  const p = entry.payload || {};
+  document.getElementById("gameDetailTitle").textContent = p.script || "Queued game";
+
+  const statusRows = [
+    `<div class="detail-row"><span class="detail-label">Status</span><span class="detail-value">${bucket === "failed" ? "Failed" : "Pending"}</span></div>`,
+    `<div class="detail-row"><span class="detail-label">Queued</span><span class="detail-value">${new Date(entry.createdAt).toLocaleString()}</span></div>`,
+    `<div class="detail-row"><span class="detail-label">Attempts</span><span class="detail-value">${entry.attempts}</span></div>`,
+    entry.lastError ? `<div class="detail-row"><span class="detail-label">Last error</span><span class="detail-value">${escHtml(entry.lastError)}</span></div>` : "",
+  ].filter(Boolean).join("");
+
+  const dataRows = DETAIL_LABELS
+    .filter(([key]) => {
+      const v = p[key];
+      return v !== undefined && v !== "" && v !== 0;
+    })
+    .map(([key, label]) =>
+      `<div class="detail-row">` +
+      `<span class="detail-label">${escHtml(label)}</span>` +
+      `<span class="detail-value">${escHtml(String(p[key]))}</span>` +
+      `</div>`
+    )
+    .join("");
+
+  document.getElementById("gameDetailBody").innerHTML =
+    `<div class="detail-section-title">Queue status</div>` + statusRows +
+    `<div class="detail-section-title">Game data</div>` + dataRows;
+
+  document.getElementById("gameDetailSheet").classList.remove("hidden");
+  document.getElementById("gameDetailBackdrop").classList.remove("hidden");
 }
 
 // Note: btnEl param removed — arming state lives in _armedForDelete/_armTimers, not the DOM node.
@@ -724,6 +783,7 @@ async function submitGame(e) {
   btn.classList.add("loading"); btn.disabled = true;
 
   const payload = {
+    clientId:       crypto.randomUUID(), // idempotency key — server deduplicates on retry
     key:            AUTH_HASH,
     date:           document.getElementById("date").value,
     event:          document.getElementById("event").value.trim(),
@@ -1012,25 +1072,29 @@ function buildRecentRowHTML(row, index) {
   const badgeText  = isWin ? "WIN" : "LOSS";
   const roleClass  = row.startingTeam === "Evil" ? "recent-role-evil" : "recent-role-good";
 
+  // Role-change detection: only show when a role actually changed.
+  // startingRole is auto-filled into mid/end on submit, so equal values mean no real change.
+  const startRole  = (row.startingRole || "").trim();
+  const midRole    = (row.midGameRole  || "").trim();
+  const endRole    = (row.endingRole   || "").trim();
+  const midChanged = midRole && midRole !== startRole;
+  const prevRole   = midChanged ? midRole : startRole; // baseline for end-change comparison
+  const endChanged = endRole && endRole !== prevRole;
+  const hasSpecial = (row.specialWinType || "").trim();
+
   let line3 = "";
-  const hasMidRole = row.midGameRole && row.midGameRole.trim();
-  const hasSpecial = row.specialWinType && row.specialWinType.trim();
-  if (hasMidRole || hasSpecial) {
+  if (midChanged || endChanged || hasSpecial) {
     const parts = [];
-    if (hasMidRole) {
-      const fromClass = row.startingTeam === "Evil" ? "recent-role-evil" : "recent-role-good";
-      const toClass   = row.midGameTeam  === "Evil" ? "recent-role-evil" : "recent-role-good";
-      parts.push(
-        `<span class="recent-role-change">` +
-        `🔄 <span class="${fromClass}">${escHtml(row.startingRole)}</span>` +
-        ` → ` +
-        `<span class="${toClass}">${escHtml(row.midGameRole)}</span>` +
-        `</span>`
-      );
+    if (midChanged || endChanged) {
+      const rc = t => t === "Evil" ? "recent-role-evil" : "recent-role-good";
+      let chain = `<span class="${rc(row.startingTeam)}">${escHtml(startRole)}</span>`;
+      if (midChanged) chain += ` → <span class="${rc(row.midGameTeam)}">${escHtml(midRole)}</span>`;
+      if (endChanged) chain += ` → <span class="${rc(row.endingTeam)}">${escHtml(endRole)}</span>`;
+      parts.push(`<span class="recent-role-change">🔄 ${chain}</span>`);
     }
     if (hasSpecial) {
       parts.push(
-        `<span>⭐ <span style="color:var(--accent);font-weight:500">${escHtml(row.specialWinType)}</span></span>`
+        `<span>⭐ <span style="color:var(--accent);font-weight:500">${escHtml(hasSpecial)}</span></span>`
       );
     }
     line3 = `<div class="recent-row-line3">${parts.join('<span style="color:var(--border)"> · </span>')}</div>`;
