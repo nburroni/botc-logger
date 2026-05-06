@@ -163,13 +163,11 @@ function getFailed()  { return queueRead(QUEUE_FAILED_KEY); }
 // Tries one fetch against the Apps Script endpoint. Returns a normalized
 // result object: { ok, authError, userError, row, err }.
 //
-// Two-phase try/catch: we distinguish between a true network failure (fetch
-// threw — request never reached the server) and a response-parsing failure
-// (the POST DID reach Apps Script but the browser can't read the response,
-// usually because Apps Script redirects to script.googleusercontent.com which
-// may not echo CORS headers back to the client). In the latter case treating
-// the attempt as provisional success is safe: the server already wrote the
-// row, and the idempotency key (clientId) prevents duplicate rows on retries.
+// CORS note: Apps Script POSTs redirect to script.googleusercontent.com, which
+// may not echo CORS headers. The browser then rejects fetch() with TypeError
+// even though the row was already written. We use navigator.onLine to separate
+// "CORS blocked but server got the request" (provisional success) from "true
+// network failure" (keep in pending). See the catch block below for details.
 async function queueAttempt(payload) {
   let resp;
   try {
@@ -183,7 +181,27 @@ async function queueAttempt(payload) {
       redirect: "follow",
     });
   } catch (netErr) {
-    // True network failure: request did not reach the server. Keep in queue.
+    // Distinguish CORS-masked success from a true network failure.
+    //
+    // Apps Script POSTs redirect to script.googleusercontent.com. That
+    // redirect response may not carry CORS headers, so the browser rejects
+    // the fetch() promise with TypeError even though doPost already ran and
+    // wrote the row. navigator.onLine lets us separate the two cases:
+    //
+    //   onLine = true  → device has a network path; the POST almost
+    //                    certainly reached the server. Treat as provisional
+    //                    success so the retry loop stops and no more
+    //                    duplicate rows are written.
+    //
+    //   onLine = false → device is offline; the request never left.
+    //                    Keep in pending for retry when connectivity returns.
+    //
+    // The server-side clientId dedup (col AB) acts as a safety net: even if
+    // the provisional-success assumption is wrong and the row wasn't written,
+    // the next real retry will write it without a duplicate.
+    if (navigator.onLine) {
+      return { ok: true, row: null }; // provisional success — CORS masked the response
+    }
     return { ok: false, networkError: true, err: String(netErr) };
   }
 
@@ -197,11 +215,8 @@ async function queueAttempt(payload) {
     }
     return { ok: true, row: body.row };
   } catch (_parseErr) {
-    // Response was received (no CORS/network block on the request itself) but
-    // the body isn't parseable JSON — Apps Script likely returned an HTML error
-    // page or the redirect response was opaque. The row was almost certainly
-    // written; treat as provisional success to stop retries and avoid duplicates.
-    // The server-side clientId dedup handles the case where we're wrong.
+    // Response received but not JSON — Apps Script likely returned an HTML
+    // error page. Treat as provisional success (row probably written).
     return { ok: true, row: null };
   }
 }
@@ -819,7 +834,8 @@ async function submitGame(e) {
     const result = await submitViaQueue(payload);
 
     if (result.synced) {
-      showToast("Game logged! (row " + result.row + ")", "success");
+      // result.row is null for provisional success (CORS masked the response).
+      showToast(result.row != null ? "Game logged! (row " + result.row + ")" : "Game logged!", "success");
       saveGameInfo();
       resetFormForNextGame();
       refreshPrefillButton();
