@@ -125,6 +125,55 @@ function deleteCookie(name) {
 
 const QUEUE_PENDING_KEY = "botc_logger_queue_pending";
 const QUEUE_FAILED_KEY  = "botc_logger_queue_failed";
+const AUTO_RETRY_KEY    = "botc_logger_auto_retry"; // "false" disables automatic retries; missing = enabled
+const LOG_KEY           = "botc_logger_debug_log";
+const LOG_MAX           = 200;
+
+// ——— DEBUG LOG ———
+// Ring buffer of debugging events persisted to localStorage so the user can
+// share recent activity when something fails. Keep entries small — no full
+// payloads, no auth hashes. Reads/writes are best-effort.
+function dlog(event, data) {
+  try {
+    const log = readLog();
+    log.push({ t: Date.now(), e: event, d: data == null ? null : data });
+    while (log.length > LOG_MAX) log.shift();
+    localStorage.setItem(LOG_KEY, JSON.stringify(log));
+  } catch (_) {}
+}
+function readLog() {
+  try {
+    const raw = localStorage.getItem(LOG_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (_) {
+    return [];
+  }
+}
+
+// ——— AUTO-RETRY TOGGLE ———
+// When disabled, the 30s drain interval and event-driven retries (online,
+// visibilitychange, DOMContentLoaded, opportunistic post-submit) are all
+// skipped. Manual retries via retryAll() / retryQueued() still work.
+function isAutoRetryEnabled() {
+  try {
+    return localStorage.getItem(AUTO_RETRY_KEY) !== "false";
+  } catch (_) {
+    return true;
+  }
+}
+function setAutoRetryEnabled(enabled) {
+  try {
+    localStorage.setItem(AUTO_RETRY_KEY, enabled ? "true" : "false");
+  } catch (_) {}
+  dlog("auto_retry:set", { enabled: !!enabled });
+  // Reflect into the checkbox if the change came from elsewhere.
+  const el = document.getElementById("autoRetryToggle");
+  if (el && el.checked !== !!enabled) el.checked = !!enabled;
+  // Recompute the interval so a disable clears it immediately.
+  maybeStartInterval();
+}
 
 function queueRead(key) {
   try {
@@ -163,14 +212,14 @@ function getFailed()  { return queueRead(QUEUE_FAILED_KEY); }
 // Tries one fetch against the Apps Script endpoint. Returns a normalized
 // result object: { ok, authError, userError, row, err }.
 //
-// Two-phase try/catch: we distinguish between a true network failure (fetch
-// threw — request never reached the server) and a response-parsing failure
-// (the POST DID reach Apps Script but the browser can't read the response,
-// usually because Apps Script redirects to script.googleusercontent.com which
-// may not echo CORS headers back to the client). In the latter case treating
-// the attempt as provisional success is safe: the server already wrote the
-// row, and the idempotency key (clientId) prevents duplicate rows on retries.
+// CORS note: Apps Script POSTs redirect to script.googleusercontent.com, which
+// may not echo CORS headers. The browser then rejects fetch() with TypeError
+// even though the row was already written. We use navigator.onLine to separate
+// "CORS blocked but server got the request" (provisional success) from "true
+// network failure" (keep in pending). See the catch block below for details.
 async function queueAttempt(payload) {
+  const cid    = payload && payload.clientId;
+  const script = payload && payload.script;
   let resp;
   try {
     resp = await fetch(ENDPOINT, {
@@ -183,51 +232,78 @@ async function queueAttempt(payload) {
       redirect: "follow",
     });
   } catch (netErr) {
-    // True network failure: request did not reach the server. Keep in queue.
+    // If navigator.onLine is true, fetch() throwing is most likely a CORS
+    // rejection on the Apps Script redirect response — the POST reached
+    // the server even though we couldn't read the reply. Treat as
+    // provisional success so the queue stops retrying and writing
+    // duplicates. Callers hedge the toast ("verify in sheet") because
+    // navigator.onLine is a coarse signal: it returns true on captive
+    // portals and "connected, no internet" networks, where the request
+    // never actually left. In those edge cases the entry is dropped and
+    // the game is lost client-side.
+    //
+    // The col-AB clientId dedup in Code.gs prevents a duplicate row if a
+    // later retry rewrites the same payload — but only once that Code.gs
+    // version is deployed. Until then, false provisional successes are
+    // straightforwardly lossy.
+    //
+    // If offline, the request never went out — keep in pending for later.
+    if (navigator.onLine) {
+      dlog("attempt:provisional_cors", { clientId: cid, script, err: String(netErr) });
+      return { ok: true, provisional: true, row: null };
+    }
+    dlog("attempt:offline", { clientId: cid, script, err: String(netErr) });
     return { ok: false, networkError: true, err: String(netErr) };
   }
 
   try {
     const body = await resp.json();
     if (body.error === "Unauthorized") {
+      dlog("attempt:auth_error", { clientId: cid, script });
       return { ok: false, authError: true, err: "Unauthorized" };
     }
     if (body.error) {
+      dlog("attempt:user_error", { clientId: cid, script, err: body.error });
       return { ok: false, userError: true, err: body.error };
     }
+    dlog("attempt:ok", { clientId: cid, script, row: body.row });
     return { ok: true, row: body.row };
   } catch (_parseErr) {
-    // Response was received (no CORS/network block on the request itself) but
-    // the body isn't parseable JSON — Apps Script likely returned an HTML error
-    // page or the redirect response was opaque. The row was almost certainly
-    // written; treat as provisional success to stop retries and avoid duplicates.
-    // The server-side clientId dedup handles the case where we're wrong.
-    return { ok: true, row: null };
+    // Response received but not JSON — Apps Script likely returned an HTML
+    // error page. Row probably written; treat as provisional success.
+    dlog("attempt:provisional_parse", { clientId: cid, script });
+    return { ok: true, provisional: true, row: null };
   }
 }
 
 // Public API: try once if online; enqueue otherwise.
 // Returns one of:
-//   { synced: true, row }
+//   { synced: true, row, provisional }    // provisional=true when the response
+//                                         // wasn't readable; verify in sheet
 //   { queued: true }
 //   { synced: false, authError: true, err }     // caller should clearSession
 async function submitViaQueue(payload) {
+  const cid = payload && payload.clientId;
+  const script = payload && payload.script;
   if (!navigator.onLine) {
+    dlog("submit:queued_offline", { clientId: cid, script });
     const entry = queueNewEntry(payload);
     queueWrite(QUEUE_PENDING_KEY, [...getPending(), entry]);
     maybeStartInterval();
     return { queued: true };
   }
+  dlog("submit:attempt", { clientId: cid, script });
   const result = await queueAttempt(payload);
   if (result.ok) {
     // Opportunistic drain: we have a working connection. Fire-and-forget.
     drainQueue().catch(() => {});
-    return { synced: true, row: result.row };
+    return { synced: true, row: result.row, provisional: !!result.provisional };
   }
   if (result.authError) {
     return { synced: false, authError: true, err: result.err };
   }
   // userError or networkError → enqueue with the error annotated.
+  dlog("submit:queued_after_error", { clientId: cid, script, err: result.err });
   const entry = queueNewEntry(payload);
   entry.attempts = 1;
   entry.lastError = result.err;
@@ -238,16 +314,34 @@ async function submitViaQueue(payload) {
 
 let _isDraining = false;
 let _pendingRerun = false;
+let _pendingRerunManual = false; // sticky: any coalesced manual call promotes the rerun
 
 // Processes the pending bucket FIFO. Auth failures stop the drain; other
 // errors move the entry to failed and continue. Network/5xx leaves the
 // entry in place, increments attempts, and stops the drain so we don't
 // hammer a flaky connection.
-async function drainQueue() {
-  if (_isDraining) { _pendingRerun = true; return; }
+//
+// Accepts an optional { manual } flag. When auto-retry is disabled, only
+// manual drains run — automatic triggers (interval, online, visibility)
+// short-circuit so the user can pause retries while debugging.
+async function drainQueue(opts) {
+  const manual = !!(opts && opts.manual === true);
+  if (!manual && !isAutoRetryEnabled()) {
+    if (getPending().length > 0) {
+      dlog("drain:skipped_auto_disabled", { pending: getPending().length });
+    }
+    return;
+  }
+  if (_isDraining) {
+    _pendingRerun = true;
+    if (manual) _pendingRerunManual = true; // promote the rerun so it bypasses the toggle
+    return;
+  }
   _isDraining = true;
+  dlog("drain:start", { manual, pending: getPending().length });
   try {
-    let synced = 0;
+    let confirmed = 0;
+    let provisional = 0;
     while (true) {
       const pending = getPending();
       if (pending.length === 0) break;
@@ -256,7 +350,7 @@ async function drainQueue() {
 
       if (result.ok) {
         queueWrite(QUEUE_PENDING_KEY, pending.slice(1));
-        synced++;
+        if (result.provisional) provisional++; else confirmed++;
         continue;
       }
       if (result.authError) {
@@ -276,13 +370,21 @@ async function drainQueue() {
       queueWrite(QUEUE_PENDING_KEY, [updated, ...pending.slice(1)]);
       break;
     }
-    if (synced > 0) showToast(`Synced ${synced} game${synced === 1 ? "" : "s"}`, "success");
+    const total = confirmed + provisional;
+    dlog("drain:done", { confirmed, provisional, remaining: getPending().length });
+    if (total > 0) {
+      const msg = `Synced ${total} game${total === 1 ? "" : "s"}`;
+      // Hedge if any entry succeeded provisionally (response wasn't readable).
+      showToast(provisional > 0 ? `${msg} — please verify in sheet` : msg, "success");
+    }
     maybeStartInterval();
   } finally {
     _isDraining = false;
     if (_pendingRerun) {
       _pendingRerun = false;
-      drainQueue();
+      const rerunManual = _pendingRerunManual;
+      _pendingRerunManual = false;
+      drainQueue(rerunManual ? { manual: true } : undefined);
     }
   }
 }
@@ -295,20 +397,24 @@ function retryQueued(id, bucket) {
   const [entry] = list.splice(idx, 1);
   queueWrite(fromKey, list);
   queueWrite(QUEUE_PENDING_KEY, [...getPending(), { ...entry, attempts: entry.attempts, lastError: null }]);
-  drainQueue();
+  dlog("retry:single", { id, fromBucket: bucket });
+  drainQueue({ manual: true });
 }
 
 function deleteQueued(id, bucket) {
   const key = bucket === "failed" ? QUEUE_FAILED_KEY : QUEUE_PENDING_KEY;
   const list = queueRead(key);
   const next = list.filter((e) => e.id !== id);
-  if (next.length !== list.length) queueWrite(key, next);
+  if (next.length !== list.length) {
+    queueWrite(key, next);
+    dlog("queue:deleted", { id, bucket });
+  }
 }
 
 let _drainInterval = null;
 
 function maybeStartInterval() {
-  const active = getPending().length > 0;
+  const active = getPending().length > 0 && isAutoRetryEnabled();
   if (active && !_drainInterval) {
     _drainInterval = setInterval(drainQueue, 30_000);
   } else if (!active && _drainInterval) {
@@ -327,6 +433,9 @@ document.addEventListener("visibilitychange", () => {
 });
 // Kick a drain on load if anything is pending.
 document.addEventListener("DOMContentLoaded", () => {
+  // Sync the toggle UI to localStorage (default: enabled).
+  const toggle = document.getElementById("autoRetryToggle");
+  if (toggle) toggle.checked = isAutoRetryEnabled();
   if (getPending().length > 0) drainQueue();
   maybeStartInterval();
 });
@@ -369,6 +478,13 @@ function openQueueSheet() {
   document.getElementById("queueSheetBackdrop").classList.remove("hidden");
   document.getElementById("queueSheet").classList.remove("hidden");
   renderQueueSheet();
+  // Sync toggle to localStorage in case it changed elsewhere or this is the
+  // first open after a reload.
+  const toggle = document.getElementById("autoRetryToggle");
+  if (toggle) toggle.checked = isAutoRetryEnabled();
+  // Collapse the debug panes so they don't carry stale data across opens.
+  document.getElementById("queueCsvSection")?.classList.add("hidden");
+  document.getElementById("queueLogSection")?.classList.add("hidden");
   document.addEventListener("keydown", queueSheetKeyHandler);
 }
 
@@ -504,6 +620,7 @@ function confirmDeleteQueued(id, bucket) {
 
 function retryAll() {
   const failed = getFailed();
+  dlog("retry:all", { failedCount: failed.length, pendingCount: getPending().length });
   if (failed.length) {
     const next = failed.map((e) => ({ ...e, lastError: null }));
     // Each queueWrite dispatches "botc:queue-changed", which triggers
@@ -511,15 +628,125 @@ function retryAll() {
     queueWrite(QUEUE_PENDING_KEY, [...getPending(), ...next]);
     queueWrite(QUEUE_FAILED_KEY, []);
   }
-  // drainQueue calls maybeStartInterval in its finally block (see Chunk 2),
-  // so the 30s interval is properly started/stopped after this drain.
-  drainQueue();
+  // Manual flag bypasses the auto-retry toggle so an explicit user retry
+  // always runs even when automatic retries are paused for debugging.
+  drainQueue({ manual: true });
+}
+
+// ——— QUEUE CSV EXPORT ———
+// Field order matches the Google Sheet's column order so the CSV can be
+// pasted directly into a spreadsheet to recover queued games manually.
+const CSV_FIELDS = [
+  "date", "event", "location", "liveOnline", "script", "storyteller", "numPlayers",
+  "startingRole", "startingTeam", "midGameRole", "midGameTeam", "endingRole", "endingTeam",
+  "roleNotes", "livedDiedNotes", "startDemon", "endDemon",
+  "winningTeam", "winLoss", "lastNight",
+  "fabled1", "fabled2", "fabled3", "fabledNotes",
+  "loric1", "loric2", "loricNotes",
+  "specialWinType",
+];
+const CSV_META_FIELDS = ["bucket", "id", "createdAt", "attempts", "lastError"];
+
+function csvEscape(v) {
+  const s = String(v == null ? "" : v);
+  return /[",\n\r]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+}
+
+function csvRow(bucket, entry) {
+  const p = entry.payload || {};
+  const meta = [
+    bucket,
+    entry.id || "",
+    new Date(entry.createdAt || 0).toISOString(),
+    entry.attempts || 0,
+    entry.lastError || "",
+  ];
+  const data = CSV_FIELDS.map(f => p[f] != null ? p[f] : "");
+  return [...meta, ...data].map(csvEscape).join(",");
+}
+
+function buildQueueCsv() {
+  const pending = getPending();
+  const failed = getFailed();
+  if (pending.length + failed.length === 0) return "(queue is empty)";
+  const header = [...CSV_META_FIELDS, ...CSV_FIELDS].map(csvEscape).join(",");
+  const rows = [
+    ...pending.map(e => csvRow("pending", e)),
+    ...failed .map(e => csvRow("failed",  e)),
+  ];
+  return [header, ...rows].join("\n");
+}
+
+function toggleCsvExport() {
+  const section = document.getElementById("queueCsvSection");
+  if (!section) return;
+  if (section.classList.contains("hidden")) {
+    document.getElementById("queueCsvText").value = buildQueueCsv();
+    section.classList.remove("hidden");
+  } else {
+    section.classList.add("hidden");
+  }
+}
+
+// ——— DEBUG LOG UI ———
+function formatLog() {
+  const log = readLog();
+  if (log.length === 0) return "(empty)";
+  return log.map(entry => {
+    const t = new Date(entry.t).toISOString().slice(11, 23); // HH:MM:SS.mmm
+    const data = entry.d != null ? " " + JSON.stringify(entry.d) : "";
+    return `[${t}] ${entry.e}${data}`;
+  }).join("\n");
+}
+
+function toggleDebugLog() {
+  const section = document.getElementById("queueLogSection");
+  if (!section) return;
+  if (section.classList.contains("hidden")) {
+    document.getElementById("queueLogText").value = formatLog();
+    section.classList.remove("hidden");
+  } else {
+    section.classList.add("hidden");
+  }
+}
+
+function clearDebugLog() {
+  try { localStorage.removeItem(LOG_KEY); } catch (_) {}
+  dlog("log:cleared", null); // dlog re-creates the buffer with one entry
+  const ta = document.getElementById("queueLogText");
+  if (ta) ta.value = formatLog();
+}
+
+// ——— CLIPBOARD HELPER ———
+function copyTextareaById(id) {
+  const ta = document.getElementById(id);
+  if (!ta) return;
+  ta.focus();
+  ta.select();
+  const fallback = () => showToast("Press Cmd/Ctrl+C to copy", "info");
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(ta.value).then(
+        () => showToast("Copied to clipboard", "success"),
+        fallback
+      );
+      return;
+    }
+    if (document.execCommand && document.execCommand("copy")) {
+      showToast("Copied to clipboard", "success");
+      return;
+    }
+    fallback();
+  } catch (_) {
+    fallback();
+  }
 }
 
 // ——— SESSION ———
 // Clears stored credentials and returns the user to the setup screen.
 // Called on auth failure AND from the manual reset button in the header.
 function clearSession(toastMsg) {
+  dlog("session:cleared", { reason: toastMsg || "manual" });
   // INVARIANT: do NOT touch queue buckets or game-info prefill. Queued games
   // are user data that must survive a password reset.
   const beforePending = localStorage.getItem(QUEUE_PENDING_KEY);
@@ -819,7 +1046,14 @@ async function submitGame(e) {
     const result = await submitViaQueue(payload);
 
     if (result.synced) {
-      showToast("Game logged! (row " + result.row + ")", "success");
+      // Provisional success means the response wasn't readable (typically a
+      // CORS-masked redirect). Hedge the toast so the user knows to verify.
+      showToast(
+        result.provisional
+          ? "Game logged — please verify in sheet"
+          : "Game logged! (row " + result.row + ")",
+        "success"
+      );
       saveGameInfo();
       resetFormForNextGame();
       refreshPrefillButton();
