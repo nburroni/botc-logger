@@ -181,26 +181,24 @@ async function queueAttempt(payload) {
       redirect: "follow",
     });
   } catch (netErr) {
-    // Distinguish CORS-masked success from a true network failure.
+    // If navigator.onLine is true, fetch() throwing is most likely a CORS
+    // rejection on the Apps Script redirect response — the POST reached
+    // the server even though we couldn't read the reply. Treat as
+    // provisional success so the queue stops retrying and writing
+    // duplicates. Callers hedge the toast ("verify in sheet") because
+    // navigator.onLine is a coarse signal: it returns true on captive
+    // portals and "connected, no internet" networks, where the request
+    // never actually left. In those edge cases the entry is dropped and
+    // the game is lost client-side.
     //
-    // Apps Script POSTs redirect to script.googleusercontent.com. That
-    // redirect response may not carry CORS headers, so the browser rejects
-    // the fetch() promise with TypeError even though doPost already ran and
-    // wrote the row. navigator.onLine lets us separate the two cases:
+    // The col-AB clientId dedup in Code.gs prevents a duplicate row if a
+    // later retry rewrites the same payload — but only once that Code.gs
+    // version is deployed. Until then, false provisional successes are
+    // straightforwardly lossy.
     //
-    //   onLine = true  → device has a network path; the POST almost
-    //                    certainly reached the server. Treat as provisional
-    //                    success so the retry loop stops and no more
-    //                    duplicate rows are written.
-    //
-    //   onLine = false → device is offline; the request never left.
-    //                    Keep in pending for retry when connectivity returns.
-    //
-    // The server-side clientId dedup (col AB) acts as a safety net: even if
-    // the provisional-success assumption is wrong and the row wasn't written,
-    // the next real retry will write it without a duplicate.
+    // If offline, the request never went out — keep in pending for later.
     if (navigator.onLine) {
-      return { ok: true, row: null }; // provisional success — CORS masked the response
+      return { ok: true, provisional: true, row: null };
     }
     return { ok: false, networkError: true, err: String(netErr) };
   }
@@ -216,14 +214,15 @@ async function queueAttempt(payload) {
     return { ok: true, row: body.row };
   } catch (_parseErr) {
     // Response received but not JSON — Apps Script likely returned an HTML
-    // error page. Treat as provisional success (row probably written).
-    return { ok: true, row: null };
+    // error page. Row probably written; treat as provisional success.
+    return { ok: true, provisional: true, row: null };
   }
 }
 
 // Public API: try once if online; enqueue otherwise.
 // Returns one of:
-//   { synced: true, row }
+//   { synced: true, row, provisional }    // provisional=true when the response
+//                                         // wasn't readable; verify in sheet
 //   { queued: true }
 //   { synced: false, authError: true, err }     // caller should clearSession
 async function submitViaQueue(payload) {
@@ -237,7 +236,7 @@ async function submitViaQueue(payload) {
   if (result.ok) {
     // Opportunistic drain: we have a working connection. Fire-and-forget.
     drainQueue().catch(() => {});
-    return { synced: true, row: result.row };
+    return { synced: true, row: result.row, provisional: !!result.provisional };
   }
   if (result.authError) {
     return { synced: false, authError: true, err: result.err };
@@ -262,7 +261,8 @@ async function drainQueue() {
   if (_isDraining) { _pendingRerun = true; return; }
   _isDraining = true;
   try {
-    let synced = 0;
+    let confirmed = 0;
+    let provisional = 0;
     while (true) {
       const pending = getPending();
       if (pending.length === 0) break;
@@ -271,7 +271,7 @@ async function drainQueue() {
 
       if (result.ok) {
         queueWrite(QUEUE_PENDING_KEY, pending.slice(1));
-        synced++;
+        if (result.provisional) provisional++; else confirmed++;
         continue;
       }
       if (result.authError) {
@@ -291,7 +291,12 @@ async function drainQueue() {
       queueWrite(QUEUE_PENDING_KEY, [updated, ...pending.slice(1)]);
       break;
     }
-    if (synced > 0) showToast(`Synced ${synced} game${synced === 1 ? "" : "s"}`, "success");
+    const total = confirmed + provisional;
+    if (total > 0) {
+      const msg = `Synced ${total} game${total === 1 ? "" : "s"}`;
+      // Hedge if any entry succeeded provisionally (response wasn't readable).
+      showToast(provisional > 0 ? `${msg} — please verify in sheet` : msg, "success");
+    }
     maybeStartInterval();
   } finally {
     _isDraining = false;
@@ -834,8 +839,14 @@ async function submitGame(e) {
     const result = await submitViaQueue(payload);
 
     if (result.synced) {
-      // result.row is null for provisional success (CORS masked the response).
-      showToast(result.row != null ? "Game logged! (row " + result.row + ")" : "Game logged!", "success");
+      // Provisional success means the response wasn't readable (typically a
+      // CORS-masked redirect). Hedge the toast so the user knows to verify.
+      showToast(
+        result.provisional
+          ? "Game logged — please verify in sheet"
+          : "Game logged! (row " + result.row + ")",
+        "success"
+      );
       saveGameInfo();
       resetFormForNextGame();
       refreshPrefillButton();
