@@ -317,6 +317,25 @@
       <div class="sheet-body" id="queueSheetBody"></div>
       <div class="sheet-footer">
         <button type="button" class="retry-all-btn hidden" id="retryAllBtn" onclick="retryAll()">Retry all</button>
+        <label class="queue-toggle">
+          <input type="checkbox" id="autoRetryToggle" onchange="setAutoRetryEnabled(this.checked)">
+          <span>Auto-retry pending entries</span>
+        </label>
+        <div class="queue-debug-actions">
+          <button type="button" class="queue-debug-btn" onclick="toggleCsvExport()">Export CSV</button>
+          <button type="button" class="queue-debug-btn" onclick="toggleDebugLog()">Debug log</button>
+        </div>
+        <div id="queueCsvSection" class="queue-debug-section hidden">
+          <textarea id="queueCsvText" readonly rows="6" aria-label="Queue CSV"></textarea>
+          <button type="button" class="queue-debug-btn" onclick="copyTextareaById('queueCsvText')">Copy CSV</button>
+        </div>
+        <div id="queueLogSection" class="queue-debug-section hidden">
+          <textarea id="queueLogText" readonly rows="10" aria-label="Debug log"></textarea>
+          <div class="queue-debug-actions">
+            <button type="button" class="queue-debug-btn" onclick="copyTextareaById('queueLogText')">Copy log</button>
+            <button type="button" class="queue-debug-btn" onclick="clearDebugLog()">Clear log</button>
+          </div>
+        </div>
       </div>
     </div>
 <div class="sheet-backdrop hidden" id="gameDetailBackdrop" onclick="closeGameDetail()"></div>
