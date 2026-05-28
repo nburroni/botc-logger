@@ -37,6 +37,7 @@
         <button type="button" class="queue-badge hidden" id="queueBadge" onclick="openQueueSheet()" aria-label="Sync queue">
           <span id="queueBadgeText">↻ 0</span>
         </button>
+  <button type="button" class="diag-btn" id="diagBtn" onclick="openDiagnostics()" title="Diagnostics & logs" aria-label="Diagnostics">&#9881;</button>
   <button type="button" class="reset-btn" id="resetBtn" onclick="clearSession()" title="Clear session / re-connect">&#x21bb;</button>
 </div>
 
@@ -323,18 +324,11 @@
         </label>
         <div class="queue-debug-actions">
           <button type="button" class="queue-debug-btn" onclick="toggleCsvExport()">Export CSV</button>
-          <button type="button" class="queue-debug-btn" onclick="toggleDebugLog()">Debug log</button>
+          <button type="button" class="queue-debug-btn" onclick="openDiagnostics()">Diagnostics &amp; logs</button>
         </div>
         <div id="queueCsvSection" class="queue-debug-section hidden">
           <textarea id="queueCsvText" readonly rows="6" aria-label="Queue CSV"></textarea>
           <button type="button" class="queue-debug-btn" onclick="copyTextareaById('queueCsvText')">Copy CSV</button>
-        </div>
-        <div id="queueLogSection" class="queue-debug-section hidden">
-          <textarea id="queueLogText" readonly rows="10" aria-label="Debug log"></textarea>
-          <div class="queue-debug-actions">
-            <button type="button" class="queue-debug-btn" onclick="copyTextareaById('queueLogText')">Copy log</button>
-            <button type="button" class="queue-debug-btn" onclick="clearDebugLog()">Clear log</button>
-          </div>
         </div>
       </div>
     </div>
@@ -346,6 +340,29 @@
     <button type="button" class="sheet-close" onclick="closeGameDetail()" aria-label="Close">&times;</button>
   </div>
   <div class="sheet-body" id="gameDetailBody"></div>
+</div>
+<div class="sheet-backdrop hidden" id="diagBackdrop" onclick="closeDiagnostics()"></div>
+<div class="sheet hidden" id="diagSheet" role="dialog" aria-modal="true" aria-label="Diagnostics">
+  <div class="sheet-handle"></div>
+  <div class="sheet-header">
+    <h2>Diagnostics</h2>
+    <button type="button" class="sheet-close" onclick="closeDiagnostics()" aria-label="Close">&times;</button>
+  </div>
+  <div class="sheet-body">
+    <div class="diag-meta">
+      <div><span class="diag-label">App version</span><span id="diagVersion">—</span></div>
+      <div><span class="diag-label">Connection</span><span id="diagConn">—</span></div>
+      <div><span class="diag-label">Queued</span><span id="diagQueued">—</span></div>
+    </div>
+    <button type="button" class="diag-update-btn" id="diagUpdateBtn" onclick="forceUpdate()">Force update (reload latest code)</button>
+    <div class="diag-section-title">Action log</div>
+    <textarea id="diagLogText" readonly rows="14" aria-label="Action log"></textarea>
+    <div class="queue-debug-actions">
+      <button type="button" class="queue-debug-btn" onclick="copyTextareaById('diagLogText')">Copy log</button>
+      <button type="button" class="queue-debug-btn" onclick="refreshDiagLog()">Refresh</button>
+      <button type="button" class="queue-debug-btn" onclick="clearDebugLog()">Clear</button>
+    </div>
+  </div>
 </div>
 <script src="app.js"></script>
     <script>
@@ -359,6 +376,7 @@
               newWorker.addEventListener("statechange", () => {
                 if (newWorker.state === "installed" && navigator.serviceWorker.controller) {
                   // An update is available and an old SW is currently in control.
+                  if (window.dlog) window.dlog("sw:update_available", null);
                   if (window.showToast) {
                     // sticky: true extends auto-dismiss to 10s so users have time to tap.
                     window.showToast("Update available — tap to reload", "info", { onClick: () => location.reload(), sticky: true });

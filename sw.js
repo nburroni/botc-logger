@@ -8,7 +8,7 @@
 // Bump CACHE_VERSION whenever the shell changes. No build step — a literal
 // constant is the source of truth.
 
-const CACHE_VERSION = "v2";
+const CACHE_VERSION = "v3";
 const CACHE_NAME = `botc-logger-${CACHE_VERSION}`;
 const SHELL = [
   "/botc-logger/",
@@ -19,6 +19,13 @@ const SHELL = [
   "/botc-logger/icons/icon-192.png",
   "/botc-logger/icons/icon-512.png",
 ];
+
+// Allow the page to tell a waiting worker to activate immediately. Used by the
+// in-app "Force update" button and the auto-update prompt so the new shell takes
+// over without requiring the user to close and reopen the PWA.
+self.addEventListener("message", (event) => {
+  if (event.data === "SKIP_WAITING") self.skipWaiting();
+});
 
 self.addEventListener("install", (event) => {
   event.waitUntil(

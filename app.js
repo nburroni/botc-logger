@@ -42,6 +42,9 @@ const ALL_LORICS = [
 ];
 
 // ——— CONFIG ———
+// Bump alongside CACHE_VERSION in sw.js on every release so the Diagnostics
+// panel shows which build is running and the user can confirm a force-update.
+const APP_VERSION = "v3 (2026-05-05)";
 const STORAGE_KEY = "botc_logger_endpoint";
 const AUTH_KEY = "botc_logger_auth";
 const GAME_INFO_KEY = "botc_logger_game_info";
@@ -427,12 +430,14 @@ function maybeStartInterval() {
 // interval properly in sync with queue state during normal operation.
 
 // Triggers: event-driven + periodic (maybeStartInterval) + manual (retry btn).
-window.addEventListener("online", drainQueue);
+window.addEventListener("online",  () => { dlog("net:online",  null); drainQueue(); });
+window.addEventListener("offline", () => { dlog("net:offline", null); });
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "visible") drainQueue();
 });
 // Kick a drain on load if anything is pending.
 document.addEventListener("DOMContentLoaded", () => {
+  dlog("app:load", { version: APP_VERSION, online: navigator.onLine, pending: getPending().length, failed: getFailed().length });
   // Sync the toggle UI to localStorage (default: enabled).
   const toggle = document.getElementById("autoRetryToggle");
   if (toggle) toggle.checked = isAutoRetryEnabled();
@@ -482,9 +487,8 @@ function openQueueSheet() {
   // first open after a reload.
   const toggle = document.getElementById("autoRetryToggle");
   if (toggle) toggle.checked = isAutoRetryEnabled();
-  // Collapse the debug panes so they don't carry stale data across opens.
+  // Collapse the CSV pane so it doesn't carry stale data across opens.
   document.getElementById("queueCsvSection")?.classList.add("hidden");
-  document.getElementById("queueLogSection")?.classList.add("hidden");
   document.addEventListener("keydown", queueSheetKeyHandler);
 }
 
@@ -693,28 +697,65 @@ function formatLog() {
   const log = readLog();
   if (log.length === 0) return "(empty)";
   return log.map(entry => {
-    const t = new Date(entry.t).toISOString().slice(11, 23); // HH:MM:SS.mmm
+    const t = new Date(entry.t).toISOString().slice(0, 23).replace("T", " "); // date + HH:MM:SS.mmm
     const data = entry.d != null ? " " + JSON.stringify(entry.d) : "";
     return `[${t}] ${entry.e}${data}`;
   }).join("\n");
 }
 
-function toggleDebugLog() {
-  const section = document.getElementById("queueLogSection");
-  if (!section) return;
-  if (section.classList.contains("hidden")) {
-    document.getElementById("queueLogText").value = formatLog();
-    section.classList.remove("hidden");
-  } else {
-    section.classList.add("hidden");
-  }
+function refreshDiagLog() {
+  const ta = document.getElementById("diagLogText");
+  if (ta) ta.value = formatLog();
 }
 
 function clearDebugLog() {
   try { localStorage.removeItem(LOG_KEY); } catch (_) {}
   dlog("log:cleared", null); // dlog re-creates the buffer with one entry
-  const ta = document.getElementById("queueLogText");
-  if (ta) ta.value = formatLog();
+  refreshDiagLog();
+}
+
+// ——— DIAGNOSTICS SHEET ———
+function openDiagnostics() {
+  document.getElementById("diagVersion").textContent = APP_VERSION;
+  document.getElementById("diagConn").textContent =
+    (ENDPOINT ? "configured" : "not connected") + (navigator.onLine ? " · online" : " · offline");
+  document.getElementById("diagQueued").textContent =
+    `${getPending().length} pending · ${getFailed().length} failed`;
+  refreshDiagLog();
+  document.getElementById("diagBackdrop").classList.remove("hidden");
+  document.getElementById("diagSheet").classList.remove("hidden");
+}
+
+function closeDiagnostics() {
+  document.getElementById("diagBackdrop").classList.add("hidden");
+  document.getElementById("diagSheet").classList.add("hidden");
+}
+
+// Force the PWA onto the latest code without DevTools: tell any waiting service
+// worker to activate, unregister all workers, delete every cache, then reload.
+async function forceUpdate() {
+  dlog("sw:force_update", { version: APP_VERSION });
+  const btn = document.getElementById("diagUpdateBtn");
+  if (btn) { btn.disabled = true; btn.textContent = "Updating…"; }
+  try {
+    if ("serviceWorker" in navigator) {
+      const regs = await navigator.serviceWorker.getRegistrations();
+      for (const reg of regs) {
+        if (reg.waiting) reg.waiting.postMessage("SKIP_WAITING");
+        await reg.unregister();
+      }
+    }
+    if (window.caches && caches.keys) {
+      const keys = await caches.keys();
+      await Promise.all(keys.map(k => caches.delete(k)));
+    }
+  } catch (err) {
+    dlog("sw:force_update_error", { err: String(err) });
+  } finally {
+    // Cache-busting param ensures the navigation itself isn't served from any
+    // lingering HTTP cache.
+    location.replace(location.pathname + "?u=" + Date.now());
+  }
 }
 
 // ——— CLIPBOARD HELPER ———
@@ -807,6 +848,7 @@ async function saveEndpoint() {
   AUTH_HASH = await sha256(password);
   setCookie(STORAGE_KEY, ENDPOINT);
   setCookie(AUTH_KEY, AUTH_HASH);
+  dlog("session:connect", { endpoint: ENDPOINT });
   document.getElementById("setupOverlay").classList.add("hidden");
   loadOptions();
 }
@@ -819,6 +861,7 @@ async function loadOptions() {
     const resp = await fetch(url, { redirect: "follow" });
     const data = await resp.json();
     if (data.error) {
+      dlog("options:error", { err: data.error });
       if (data.error === "Unauthorized") {
         clearSession("Wrong password — please re-enter");
       } else {
@@ -827,8 +870,13 @@ async function loadOptions() {
       return;
     }
     DYNAMIC = data.options;
+    dlog("options:loaded", {
+      scripts: (DYNAMIC.scripts || []).length,
+      roles:   (DYNAMIC.roles   || []).length,
+    });
     setConnected(true, "Connected to sheet");
   } catch (err) {
+    dlog("options:fetch_failed", { err: String(err), online: navigator.onLine });
     setConnected(false, "Offline — using built-in lists");
   }
 }
