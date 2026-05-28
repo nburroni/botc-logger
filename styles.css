@@ -34,8 +34,8 @@ body {
   border-bottom: 1px solid var(--border);
   backdrop-filter: blur(20px);
   display: grid;
-  grid-template-columns: 1fr auto auto;
-  grid-template-areas: "title badge reset" "subtitle badge reset";
+  grid-template-columns: 1fr auto auto auto;
+  grid-template-areas: "title badge diag reset" "subtitle badge diag reset";
   column-gap: 12px;
 }
 .queue-badge {
@@ -76,6 +76,15 @@ body {
   display: flex; align-items: center; justify-content: center;
 }
 .reset-btn:hover, .reset-btn:active { color: var(--accent); border-color: var(--accent); }
+.diag-btn {
+  grid-area: diag; align-self: center;
+  width: 36px; height: 36px; border-radius: 50%;
+  background: rgba(255,255,255,0.06);
+  border: 1px solid var(--border); color: var(--text-muted);
+  font-size: 16px; cursor: pointer; transition: all 0.2s;
+  display: flex; align-items: center; justify-content: center;
+}
+.diag-btn:hover, .diag-btn:active { color: var(--accent); border-color: var(--accent); }
 
 /* FORM */
 .form-container { max-width: 480px; margin: 0 auto; padding: 16px; }
@@ -333,6 +342,34 @@ textarea { resize: vertical; min-height: 60px; font-family: inherit; }
 .queue-debug-section.hidden { display: none; }
 .queue-debug-section textarea {
   width: 100%; resize: vertical; min-height: 100px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px; line-height: 1.4;
+  background: var(--bg); color: var(--text);
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  padding: 8px;
+}
+
+/* DIAGNOSTICS SHEET */
+.diag-meta {
+  display: flex; flex-direction: column; gap: 6px;
+  background: var(--bg); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); padding: 10px 12px;
+  font-size: 13px;
+}
+.diag-meta > div { display: flex; justify-content: space-between; gap: 12px; }
+.diag-label { color: var(--text-muted); }
+.diag-update-btn {
+  width: 100%; padding: 12px; margin-top: 4px;
+  background: var(--accent); border: none; border-radius: var(--radius-sm);
+  color: white; font-weight: 600; font-size: 14px; cursor: pointer;
+}
+.diag-update-btn:active { transform: scale(0.98); }
+.diag-section-title {
+  font-size: 11px; color: var(--text-muted);
+  text-transform: uppercase; letter-spacing: 0.5px; margin: 6px 4px 0;
+}
+#diagLogText {
+  width: 100%; resize: vertical; min-height: 200px;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 11px; line-height: 1.4;
   background: var(--bg); color: var(--text);
