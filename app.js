@@ -134,8 +134,9 @@ const LOG_MAX           = 200;
 
 // ——— DEBUG LOG ———
 // Ring buffer of debugging events persisted to localStorage so the user can
-// share recent activity when something fails. Keep entries small — no full
-// payloads, no auth hashes. Reads/writes are best-effort.
+// share recent activity when something fails. Reads/writes are best-effort.
+// Game-data payloads ARE logged (see redactPayload) so we can diagnose missing
+// fields, but the auth hash is always stripped first.
 function dlog(event, data) {
   try {
     const log = readLog();
@@ -143,6 +144,13 @@ function dlog(event, data) {
     while (log.length > LOG_MAX) log.shift();
     localStorage.setItem(LOG_KEY, JSON.stringify(log));
   } catch (_) {}
+}
+// Returns a shallow copy of a submit payload with the secret `key` removed so
+// the full game data can be logged/shared without exposing the auth hash.
+function redactPayload(payload) {
+  if (!payload || typeof payload !== "object") return payload;
+  const { key, ...rest } = payload;
+  return rest;
 }
 function readLog() {
   try {
@@ -223,6 +231,11 @@ function getFailed()  { return queueRead(QUEUE_FAILED_KEY); }
 async function queueAttempt(payload) {
   const cid    = payload && payload.clientId;
   const script = payload && payload.script;
+  // Log the exact game data being POSTed (key redacted). This runs on direct
+  // submits AND every queue retry, so the log shows precisely which fields left
+  // the device — the evidence needed to tell a form/autofill bug from a
+  // server-side write bug.
+  dlog("post:sending", redactPayload(payload));
   let resp;
   try {
     resp = await fetch(ENDPOINT, {
@@ -289,7 +302,9 @@ async function submitViaQueue(payload) {
   const cid = payload && payload.clientId;
   const script = payload && payload.script;
   if (!navigator.onLine) {
-    dlog("submit:queued_offline", { clientId: cid, script });
+    // Offline games skip queueAttempt (and its post:sending log), so capture
+    // the full payload here too.
+    dlog("submit:queued_offline", redactPayload(payload));
     const entry = queueNewEntry(payload);
     queueWrite(QUEUE_PENDING_KEY, [...getPending(), entry]);
     maybeStartInterval();
