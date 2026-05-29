@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { loadApp, setSession } from "../tools/test-harness.mjs";
+import { loadApp, setSession } from "../tools/app-harness.mjs";
 
 test("redactPayload strips the auth key but keeps game fields", () => {
   const app = loadApp();
