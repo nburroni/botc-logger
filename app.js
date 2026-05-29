@@ -344,6 +344,7 @@ let _pendingRerunManual = false; // sticky: any coalesced manual call promotes t
 // short-circuit so the user can pause retries while debugging.
 async function drainQueue(opts) {
   const manual = !!(opts && opts.manual === true);
+  if (!ENDPOINT) return; // not connected — nothing to drain against
   if (!manual && !isAutoRetryEnabled()) {
     if (getPending().length > 0) {
       dlog("drain:skipped_auto_disabled", { pending: getPending().length });
@@ -358,6 +359,15 @@ async function drainQueue(opts) {
   _isDraining = true;
   dlog("drain:start", { manual, pending: getPending().length });
   try {
+    // Gate the drain on a known-good auth via the GET path. Unlike the
+    // CORS-masked POST, the GET reply is readable, so this catches rejected
+    // credentials before provisional-success can silently drop queued games.
+    // On failure verifyAuth calls clearSession (which PRESERVES the queue), so
+    // entries survive and retry after the user reconnects.
+    if (navigator.onLine && getPending().length > 0) {
+      const authOk = await verifyAuth();
+      if (!authOk) { dlog("drain:aborted_auth", null); return; }
+    }
     let confirmed = 0;
     let provisional = 0;
     while (true) {
@@ -432,7 +442,7 @@ function deleteQueued(id, bucket) {
 let _drainInterval = null;
 
 function maybeStartInterval() {
-  const active = getPending().length > 0 && isAutoRetryEnabled();
+  const active = getPending().length > 0 && isAutoRetryEnabled() && !!ENDPOINT;
   if (active && !_drainInterval) {
     _drainInterval = setInterval(drainQueue, 30_000);
   } else if (!active && _drainInterval) {
