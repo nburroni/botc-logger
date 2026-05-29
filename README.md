@@ -37,7 +37,7 @@ botc_head.webp  — App icon
 
 ### 1. Prepare the Google Sheet
 
-Create a Google Sheet with a tab named **`DATA ENTRY`** (must match `DATA_SHEET_NAME` in `Code.gs`). Columns A–AA should match the field order defined in `Code.gs` (Date, Event, Location, Live/Online, Script, Storyteller, # Players, Starting Role, ..., Loric Notes).
+Create a Google Sheet with a tab named **`DATA ENTRY`** (must match `DATA_SHEET_NAME` in `Code.gs`). The column order is defined by the `COL` map in `Code.gs` and currently spans **A–AI**: A–AA are the game fields (Date, Event, Location, Live/Online, Script, Storyteller, # Players, Starting Role, …, Loric Notes), **AB** holds the internal `clientId` idempotency key (leave it untouched), and **AI** holds Special Win Type. The `COL` constant in `Code.gs` is the single source of truth — check it if you add or move columns.
 
 ### 2. Deploy the Apps Script
 
@@ -47,11 +47,17 @@ Create a Google Sheet with a tab named **`DATA ENTRY`** (must match `DATA_SHEET_
    ```bash
    echo -n 'YourPasswordHere' | shasum -a 256 | cut -d' ' -f1
    ```
-4. Click **Deploy → New deployment**
+4. Click **Deploy → New deployment** (only for the very first deploy)
 5. Type: **Web app**, Execute as: **Me**, Who has access: **Anyone**
-6. Click **Deploy**, authorize when prompted, and copy the **Deployment ID**
+6. Click **Deploy**, authorize when prompted, and copy the **Deployment ID** — this is the URL your app talks to forever. Put it in `.env` as `APPS_SCRIPT_DEPLOYMENT_ID`.
 
-> **Important:** Every time you edit `Code.gs`, you must create a **new deployment** (Deploy → New deployment) for changes to take effect. Simply saving the script is not enough — the old deployment ID still serves the old code.
+> **Important — how to ship Code.gs changes:** After the first deploy, do **not** create a new deployment. A new deployment mints a **new URL**, but your app still points at the old one — so your edits never reach it (this is the classic "I deployed but nothing changed" trap).
+>
+> Instead, update the existing deployment **in place** so the URL is preserved. Either:
+> - **Recommended:** run `make deploy` (pushes `Code.gs` and runs `clasp deploy -i <APPS_SCRIPT_DEPLOYMENT_ID>`, which publishes a new *version* under the same deployment ID), **or**
+> - **In the Apps Script UI:** Deploy → **Manage deployments** → click the ✏️ pencil on your existing deployment → set **Version** to **New version** → **Deploy**.
+>
+> Saving the script alone does nothing — a pinned deployment keeps serving its old version until you publish a new one to that same deployment.
 
 ### 3. Host the frontend
 

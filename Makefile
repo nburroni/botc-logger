@@ -1,4 +1,4 @@
-.PHONY: setup setup-hash deploy push pull clean help
+.PHONY: setup setup-hash deploy push pull clean help release
 
 # Read APPS_SCRIPT_ID and APPS_SCRIPT_DEPLOYMENT_ID from .env without sourcing
 # the whole file (the PASSWORD entry contains a $ that would break `source`).
@@ -13,6 +13,7 @@ help:
 	@echo "  make push       — push Code.gs without creating/updating a deployment"
 	@echo "  make pull       — pull the remote Apps Script project into this directory"
 	@echo "  make clean      — remove generated .clasp.json"
+	@echo "  make release V=vN — bump CACHE_VERSION (sw.js) + APP_VERSION (app.js) together"
 
 # One-time setup: installs clasp if missing, runs `clasp login` if not already
 # logged in, and interactively captures APPS_SCRIPT_ID into .env. The Apps
@@ -109,3 +110,19 @@ pull: .clasp.json
 
 clean:
 	rm -f .clasp.json
+
+# Bump the two version constants together. CACHE_VERSION (sw.js) busts the
+# service-worker cache so the PWA pulls new code; APP_VERSION (app.js) is the
+# human-readable label shown in the Diagnostics panel. They MUST move together
+# on every shell change (app.js / index.html / styles.css / sw.js) or the PWA
+# silently keeps serving old code.
+#
+# Usage: make release V=v4
+release:
+	@if [ -z "$(V)" ]; then echo "usage: make release V=vN   (e.g. make release V=v4)" >&2; exit 1; fi
+	@sed -i.bak -E 's/const CACHE_VERSION = "[^"]*";/const CACHE_VERSION = "$(V)";/' sw.js && rm -f sw.js.bak
+	@sed -i.bak -E 's/const APP_VERSION = "[^"]*";/const APP_VERSION = "$(V) ('"$$(date -u +%Y-%m-%d)"')";/' app.js && rm -f app.js.bak
+	@echo "==> Bumped to $(V):"
+	@grep -n 'const CACHE_VERSION =' sw.js
+	@grep -n 'const APP_VERSION =' app.js
+	@echo "==> Review the diff and commit."
