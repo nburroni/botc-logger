@@ -129,6 +129,7 @@ function deleteCookie(name) {
 const QUEUE_PENDING_KEY = "botc_logger_queue_pending";
 const QUEUE_FAILED_KEY  = "botc_logger_queue_failed";
 const AUTO_RETRY_KEY    = "botc_logger_auto_retry"; // "false" disables automatic retries; missing = enabled
+const STUCK_AFTER_ATTEMPTS = 5; // after this many network failures, show a clearer message (entry keeps retrying)
 const LOG_KEY           = "botc_logger_debug_log";
 const LOG_MAX           = 200;
 
@@ -393,8 +394,14 @@ async function drainQueue(opts) {
         queueWrite(QUEUE_FAILED_KEY, [...getFailed(), updated]);
         continue; // isolated data problem; keep going.
       }
-      // networkError → leave in place, annotate, stop.
-      const updated = { ...entry, attempts: entry.attempts + 1, lastError: result.err };
+      // networkError → leave in place, annotate, stop. After enough tries,
+      // swap the raw TypeError for an actionable message. The entry stays in
+      // pending and keeps retrying — this only changes what the user sees.
+      const nextAttempts = entry.attempts + 1;
+      const lastError = nextAttempts >= STUCK_AFTER_ATTEMPTS
+        ? "Couldn't sync after " + nextAttempts + " tries — you may be offline, or open Diagnostics and check your sheet for this game."
+        : result.err;
+      const updated = { ...entry, attempts: nextAttempts, lastError };
       queueWrite(QUEUE_PENDING_KEY, [updated, ...pending.slice(1)]);
       break;
     }

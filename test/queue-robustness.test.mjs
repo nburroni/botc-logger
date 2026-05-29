@@ -58,3 +58,18 @@ test("drainQueue: does nothing when no endpoint is configured", async () => {
   const pending = JSON.parse(app.localStorage.getItem(PENDING_KEY) || "[]");
   assert.equal(pending.length, 1);
 });
+
+test("drainQueue: stuck entry gets a friendly message after the threshold", async () => {
+  const app = loadApp({ online: false }); // offline -> networkError path
+  setSession(app, "https://example.com/exec", "hash");
+  app.fetch = async () => { throw new TypeError("NetworkError when attempting to fetch resource."); };
+  // attempts already at 4; this drain makes it 5 (the threshold).
+  app.queueWrite(PENDING_KEY, [
+    { id: "1", createdAt: 0, attempts: 4, lastError: "TypeError: NetworkError", payload: { clientId: "1", script: "TB" } },
+  ]);
+  await app.drainQueue({ manual: true });
+  const pending = JSON.parse(app.localStorage.getItem(PENDING_KEY) || "[]");
+  assert.equal(pending.length, 1);
+  assert.equal(pending[0].attempts, 5);
+  assert.match(pending[0].lastError, /Couldn.t sync after 5 tries/);
+});
