@@ -68,3 +68,44 @@ test("queueAttempt: unreadable JSON -> provisional success", async () => {
   assert.equal(r.provisional, true);
   assert.equal(r.row, null);
 });
+
+const PENDING_KEY = "botc_logger_queue_pending";
+
+test("drainQueue: online provisional success clears all pending entries", async () => {
+  const app = loadApp({ online: true });
+  setSession(app, "https://example.com/exec", "hash");
+  app.fetch = async () => { throw new TypeError("NetworkError"); }; // CORS-masked POST
+  app.queueWrite(PENDING_KEY, [
+    { id: "1", createdAt: 0, attempts: 0, lastError: null, payload: { clientId: "1", script: "TB" } },
+    { id: "2", createdAt: 1, attempts: 0, lastError: null, payload: { clientId: "2", script: "TB" } },
+  ]);
+  await app.drainQueue({ manual: true });
+  const pending = JSON.parse(app.localStorage.getItem(PENDING_KEY) || "[]");
+  assert.equal(pending.length, 0);
+});
+
+test("drainQueue: offline leaves the entry pending", async () => {
+  const app = loadApp({ online: false });
+  setSession(app, "https://example.com/exec", "hash");
+  app.fetch = async () => { throw new TypeError("offline"); };
+  app.queueWrite(PENDING_KEY, [
+    { id: "1", createdAt: 0, attempts: 0, lastError: null, payload: { clientId: "1", script: "TB" } },
+  ]);
+  await app.drainQueue({ manual: true });
+  const pending = JSON.parse(app.localStorage.getItem(PENDING_KEY) || "[]");
+  assert.equal(pending.length, 1);
+  assert.equal(pending[0].attempts, 1); // attempt counter advanced
+});
+
+test("buildQueueCsv emits headers and values for every game field", () => {
+  const app = loadApp();
+  app.queueWrite(PENDING_KEY, [{
+    id: "id1", createdAt: 0, attempts: 0, lastError: null,
+    payload: { clientId: "id1", script: "TB", startDemon: "Imp", winningTeam: "Good", winLoss: "W" },
+  }]);
+  const csv = app.buildQueueCsv();
+  assert.match(csv, /startDemon/);   // header row contains the field
+  assert.match(csv, /winningTeam/);
+  assert.match(csv, /Imp/);          // data row contains the value
+  assert.match(csv, /Good/);
+});
