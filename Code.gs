@@ -151,6 +151,14 @@ function doPost(e) {
       return jsonResponse({ error: "Sheet '" + DATA_SHEET_NAME + "' not found." });
     }
 
+    // Defense in depth: never write a half-populated row. If the client (or a
+    // stale cached build) sends an incomplete payload, reject it loudly instead
+    // of silently dropping columns into the sheet.
+    var missing = missingRequiredFields(body);
+    if (missing.length) {
+      return jsonResponse({ error: "Missing required fields: " + missing.join(", ") });
+    }
+
     // Idempotency: if the client supplies a clientId (UUID), check whether this
     // exact request was already written. This prevents duplicate rows when the
     // network delivers the POST but CORS or a redirect blocks the client from
