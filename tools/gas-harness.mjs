@@ -13,6 +13,15 @@ const SRC = readFileSync(join(__dirname, "..", "Code.gs"), "utf8");
 export function loadGas({ properties = {}, sheet = null } = {}) {
   const ctx = {
     console,
+    // Expose host Array/Object/String/JSON so vm-returned values share the same
+    // prototype chain and pass assert.deepEqual in tests.
+    Array,
+    Object,
+    String,
+    JSON,
+    parseInt,
+    Math,
+    isNaN,
     PropertiesService: {
       getScriptProperties: () => ({
         getProperty: (k) => (k in properties ? properties[k] : null),
@@ -34,5 +43,14 @@ export function loadGas({ properties = {}, sheet = null } = {}) {
   ctx.globalThis = ctx;
   vm.createContext(ctx);
   vm.runInContext(SRC, ctx, { filename: "Code.gs" });
+
+  // vm array literals use the sandbox's own Array prototype, which is not the
+  // same reference as the host Array. Wrap any function that returns an array
+  // so assert.deepEqual in tests works correctly (host Array.isArray + instanceof).
+  const _missingRequiredFields = ctx.missingRequiredFields;
+  ctx.missingRequiredFields = function(body) {
+    return Array.from(_missingRequiredFields(body));
+  };
+
   return ctx;
 }

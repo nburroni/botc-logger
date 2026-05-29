@@ -251,6 +251,22 @@ function getEmptyOptions() {
   };
 }
 
+// Required fields mirror the client's REQUIRED_FIELDS (app.js). Defense in
+// depth: doPost rejects payloads missing any of these so a half-populated row
+// can never silently land in the sheet. Returns an array of missing field names.
+function missingRequiredFields(body) {
+  var required = ["date", "numPlayers", "script", "startingRole",
+                  "startingTeam", "startDemon", "winningTeam", "winLoss"];
+  var missing = [];
+  for (var i = 0; i < required.length; i++) {
+    var v = body[required[i]];
+    if (v === undefined || v === null || String(v).trim() === "") {
+      missing.push(required[i]);
+    }
+  }
+  return missing;
+}
+
 // Scans column AB (CLIENT_ID) backwards from the last data row looking for
 // a matching clientId. Returns the 1-indexed sheet row number, or 0 if not
 // found. Searching backwards is faster because retries are recent.
