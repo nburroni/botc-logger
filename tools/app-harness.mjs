@@ -90,3 +90,9 @@ export function setSession(ctx, endpoint, auth) {
     ctx,
   );
 }
+
+// Evaluate an expression inside the app's vm context (e.g. read ENDPOINT, which
+// is a top-level `let` and therefore not a property of the global object).
+export function read(ctx, expr) {
+  return vm.runInContext(expr, ctx);
+}

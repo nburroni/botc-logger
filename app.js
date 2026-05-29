@@ -44,7 +44,7 @@ const ALL_LORICS = [
 // ——— CONFIG ———
 // Bump alongside CACHE_VERSION in sw.js on every release so the Diagnostics
 // panel shows which build is running and the user can confirm a force-update.
-const APP_VERSION = "v4 (2026-05-29)";
+const APP_VERSION = "v5 (2026-05-29)";
 const STORAGE_KEY = "botc_logger_endpoint";
 const AUTH_KEY = "botc_logger_auth";
 const GAME_INFO_KEY = "botc_logger_game_info";
@@ -129,6 +129,7 @@ function deleteCookie(name) {
 const QUEUE_PENDING_KEY = "botc_logger_queue_pending";
 const QUEUE_FAILED_KEY  = "botc_logger_queue_failed";
 const AUTO_RETRY_KEY    = "botc_logger_auto_retry"; // "false" disables automatic retries; missing = enabled
+const STUCK_AFTER_ATTEMPTS = 5; // after this many network failures, show a clearer message (entry keeps retrying)
 const LOG_KEY           = "botc_logger_debug_log";
 const LOG_MAX           = 200;
 
@@ -344,6 +345,7 @@ let _pendingRerunManual = false; // sticky: any coalesced manual call promotes t
 // short-circuit so the user can pause retries while debugging.
 async function drainQueue(opts) {
   const manual = !!(opts && opts.manual === true);
+  if (!ENDPOINT) return; // not connected — nothing to drain against
   if (!manual && !isAutoRetryEnabled()) {
     if (getPending().length > 0) {
       dlog("drain:skipped_auto_disabled", { pending: getPending().length });
@@ -358,6 +360,15 @@ async function drainQueue(opts) {
   _isDraining = true;
   dlog("drain:start", { manual, pending: getPending().length });
   try {
+    // Gate the drain on a known-good auth via the GET path. Unlike the
+    // CORS-masked POST, the GET reply is readable, so this catches rejected
+    // credentials before provisional-success can silently drop queued games.
+    // On failure verifyAuth calls clearSession (which PRESERVES the queue), so
+    // entries survive and retry after the user reconnects.
+    if (navigator.onLine && getPending().length > 0) {
+      const authOk = await verifyAuth();
+      if (!authOk) { dlog("drain:aborted_auth", null); return; }
+    }
     let confirmed = 0;
     let provisional = 0;
     while (true) {
@@ -383,8 +394,14 @@ async function drainQueue(opts) {
         queueWrite(QUEUE_FAILED_KEY, [...getFailed(), updated]);
         continue; // isolated data problem; keep going.
       }
-      // networkError → leave in place, annotate, stop.
-      const updated = { ...entry, attempts: entry.attempts + 1, lastError: result.err };
+      // networkError → leave in place, annotate, stop. After enough tries,
+      // swap the raw TypeError for an actionable message. The entry stays in
+      // pending and keeps retrying — this only changes what the user sees.
+      const nextAttempts = entry.attempts + 1;
+      const lastError = nextAttempts >= STUCK_AFTER_ATTEMPTS
+        ? "Couldn't sync after " + nextAttempts + " tries — you may be offline, or open Diagnostics and check your sheet for this game."
+        : result.err;
+      const updated = { ...entry, attempts: nextAttempts, lastError };
       queueWrite(QUEUE_PENDING_KEY, [updated, ...pending.slice(1)]);
       break;
     }
@@ -432,7 +449,7 @@ function deleteQueued(id, bucket) {
 let _drainInterval = null;
 
 function maybeStartInterval() {
-  const active = getPending().length > 0 && isAutoRetryEnabled();
+  const active = getPending().length > 0 && isAutoRetryEnabled() && !!ENDPOINT;
   if (active && !_drainInterval) {
     _drainInterval = setInterval(drainQueue, 30_000);
   } else if (!active && _drainInterval) {
@@ -896,6 +913,29 @@ async function loadOptions() {
   }
 }
 
+// Auth probe over the GET path. Unlike the CORS-masked POST (whose redirect
+// strips CORS headers so the browser can't read the reply), the GET response IS
+// readable here — that's why connect-time loadOptions works. drainQueue uses
+// this to confirm credentials are still good BEFORE trusting provisional POST
+// successes, so a rejected password can't silently drop queued games.
+// Returns true if auth is good OR if it can't be determined (network/CORS).
+async function verifyAuth() {
+  if (!ENDPOINT) return true;
+  try {
+    const url = ENDPOINT + "?key=" + encodeURIComponent(AUTH_HASH);
+    const resp = await fetch(url, { redirect: "follow" });
+    const data = await resp.json();
+    if (data.error === "Unauthorized") {
+      dlog("auth:verify_failed", null);
+      clearSession("Session expired — please reconnect");
+      return false;
+    }
+    return true;
+  } catch (_) {
+    return true; // couldn't verify — don't disrupt the user
+  }
+}
+
 function setConnected(ok, msg) {
   document.getElementById("connectionDot").classList.toggle("connected", ok);
   document.getElementById("connectionStatus").textContent = msg;
@@ -1260,6 +1300,10 @@ window.__qa = {
   // reinstate the native getter on all browsers.
   goOffline() {
     if (window.__qa._realFetch) return; // already offline
+    // Loud warning: this stubs fetch to reject and forces navigator.onLine
+    // false. A reload restores normal state, but this makes an accidental
+    // lingering offline mode obvious in the console.
+    console.warn("[__qa] OFFLINE MODE ON — fetch is stubbed to reject. Call __qa.goOnline() (or reload) to restore.");
     window.__qa._realFetch = window.fetch;
     window.__qa._onLineDesc = Object.getOwnPropertyDescriptor(Navigator.prototype, "onLine");
     window.fetch = () => Promise.reject(new TypeError("__qa offline"));
