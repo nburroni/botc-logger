@@ -151,6 +151,14 @@ function doPost(e) {
       return jsonResponse({ error: "Sheet '" + DATA_SHEET_NAME + "' not found." });
     }
 
+    // Defense in depth: never write a half-populated row. If the client (or a
+    // stale cached build) sends an incomplete payload, reject it loudly instead
+    // of silently dropping columns into the sheet.
+    var missing = missingRequiredFields(body);
+    if (missing.length) {
+      return jsonResponse({ error: "Missing required fields: " + missing.join(", ") });
+    }
+
     // Idempotency: if the client supplies a clientId (UUID), check whether this
     // exact request was already written. This prevents duplicate rows when the
     // network delivers the POST but CORS or a redirect blocks the client from
@@ -249,6 +257,22 @@ function getEmptyOptions() {
     fabled: [],
     lorics: []
   };
+}
+
+// Required fields mirror the client's REQUIRED_FIELDS (app.js). Defense in
+// depth: doPost rejects payloads missing any of these so a half-populated row
+// can never silently land in the sheet. Returns an array of missing field names.
+function missingRequiredFields(body) {
+  var required = ["date", "numPlayers", "script", "startingRole",
+                  "startingTeam", "startDemon", "winningTeam", "winLoss"];
+  var missing = [];
+  for (var i = 0; i < required.length; i++) {
+    var v = body[required[i]];
+    if (v === undefined || v === null || String(v).trim() === "") {
+      missing.push(required[i]);
+    }
+  }
+  return missing;
 }
 
 // Scans column AB (CLIENT_ID) backwards from the last data row looking for
