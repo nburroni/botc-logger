@@ -896,6 +896,29 @@ async function loadOptions() {
   }
 }
 
+// Auth probe over the GET path. Unlike the CORS-masked POST (whose redirect
+// strips CORS headers so the browser can't read the reply), the GET response IS
+// readable here — that's why connect-time loadOptions works. drainQueue uses
+// this to confirm credentials are still good BEFORE trusting provisional POST
+// successes, so a rejected password can't silently drop queued games.
+// Returns true if auth is good OR if it can't be determined (network/CORS).
+async function verifyAuth() {
+  if (!ENDPOINT) return true;
+  try {
+    const url = ENDPOINT + "?key=" + encodeURIComponent(AUTH_HASH);
+    const resp = await fetch(url, { redirect: "follow" });
+    const data = await resp.json();
+    if (data.error === "Unauthorized") {
+      dlog("auth:verify_failed", null);
+      clearSession("Session expired — please reconnect");
+      return false;
+    }
+    return true;
+  } catch (_) {
+    return true; // couldn't verify — don't disrupt the user
+  }
+}
+
 function setConnected(ok, msg) {
   document.getElementById("connectionDot").classList.toggle("connected", ok);
   document.getElementById("connectionStatus").textContent = msg;
