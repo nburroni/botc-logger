@@ -1300,6 +1300,10 @@ window.__qa = {
   // reinstate the native getter on all browsers.
   goOffline() {
     if (window.__qa._realFetch) return; // already offline
+    // Loud warning: this stubs fetch to reject and forces navigator.onLine
+    // false. A reload restores normal state, but this makes an accidental
+    // lingering offline mode obvious in the console.
+    console.warn("[__qa] OFFLINE MODE ON — fetch is stubbed to reject. Call __qa.goOnline() (or reload) to restore.");
     window.__qa._realFetch = window.fetch;
     window.__qa._onLineDesc = Object.getOwnPropertyDescriptor(Navigator.prototype, "onLine");
     window.fetch = () => Promise.reject(new TypeError("__qa offline"));
