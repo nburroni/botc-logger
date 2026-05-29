@@ -37,7 +37,7 @@ botc_head.webp  — App icon
 
 ### 1. Prepare the Google Sheet
 
-Create a Google Sheet with a tab named **`DATA ENTRY`** (must match `DATA_SHEET_NAME` in `Code.gs`). Columns A–AA should match the field order defined in `Code.gs` (Date, Event, Location, Live/Online, Script, Storyteller, # Players, Starting Role, ..., Loric Notes).
+Create a Google Sheet with a tab named **`DATA ENTRY`** (must match `DATA_SHEET_NAME` in `Code.gs`). The column order is defined by the `COL` map in `Code.gs` and currently spans **A–AI**: A–AA are the game fields (Date, Event, Location, Live/Online, Script, Storyteller, # Players, Starting Role, …, Loric Notes), **AB** holds the internal `clientId` idempotency key (leave it untouched), and **AI** holds Special Win Type. The `COL` constant in `Code.gs` is the single source of truth — check it if you add or move columns.
 
 ### 2. Deploy the Apps Script
 
