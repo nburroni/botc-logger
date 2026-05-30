@@ -1458,6 +1458,33 @@ function buildRecentRowHTML(row, index) {
   );
 }
 
+
+// Section-state helper: turns a row into the shape the role section needs.
+// Mirrors buildRecentRowHTML's change-detection so the drawer's timeline
+// appears in exactly the cases the row's role arrow appears.
+function roleJourney(row) {
+  const startRole = (row.startingRole || "").trim();
+  const midRole   = (row.midGameRole  || "").trim();
+  const endRole   = (row.endingRole   || "").trim();
+  const midChanged = !!midRole && midRole !== startRole;
+  const prevRole   = midChanged ? midRole : startRole;
+  const endChanged = !!endRole && endRole !== prevRole;
+  if (!midChanged && !endChanged) {
+    return { kind: "single", startRole, startTeam: row.startingTeam || "" };
+  }
+  const out = {
+    kind: "timeline",
+    startRole, startTeam: row.startingTeam || "",
+  };
+  if (midChanged) { out.midRole = midRole; out.midTeam = row.midGameTeam || ""; }
+  if (endChanged) {
+    out.endRole = endRole;
+    out.endTeam = row.endingTeam || "";
+    out.endIsDemon = (out.endTeam === "Evil") && !!row.endDemon && endRole === (row.endDemon || "").trim();
+  }
+  return out;
+}
+
 const DETAIL_LABELS = [
   ["date",           "Date"],
   ["script",         "Script"],
