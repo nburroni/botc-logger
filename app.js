@@ -611,7 +611,21 @@ function openQueueDetail(id, bucket) {
     entry.lastError ? `<div class="detail-row"><span class="detail-label">Last error</span><span class="detail-value">${escHtml(entry.lastError)}</span></div>` : "",
   ].filter(Boolean).join("");
 
-  const dataRows = DETAIL_LABELS
+  const queueDetailFields = [
+    ["date","Date"],["script","Script"],["event","Event"],["location","Location"],
+    ["liveOnline","Format"],["storyteller","Storyteller"],["numPlayers","Players"],
+    ["startingRole","Starting Role"],["startingTeam","Starting Team"],
+    ["midGameRole","Mid Game Role"],["midGameTeam","Mid Game Team"],
+    ["endingRole","Ending Role"],["endingTeam","Ending Team"],
+    ["startDemon","Start Demon"],["endDemon","End Demon"],
+    ["winningTeam","Winning Team"],["winLoss","Result"],["lastNight","Last Day"],
+    ["specialWinType","Special Win Type"],["roleNotes","Role Notes"],
+    ["livedDiedNotes","Lived / Died / Executed / Exiled"],
+    ["fabled1","Fabled 1"],["fabled2","Fabled 2"],["fabled3","Fabled 3"],
+    ["fabledNotes","Fabled Notes"],["loric1","Loric 1"],["loric2","Loric 2"],
+    ["loricNotes","Loric Notes"],
+  ];
+  const dataRows = queueDetailFields
     .filter(([key]) => {
       const v = p[key];
       return v !== undefined && v !== "" && v !== 0;
@@ -1526,56 +1540,106 @@ function gameStats(row) {
   return tiles;
 }
 
-const DETAIL_LABELS = [
-  ["date",           "Date"],
-  ["script",         "Script"],
-  ["event",          "Event"],
-  ["location",       "Location"],
-  ["liveOnline",     "Format"],
-  ["storyteller",    "Storyteller"],
-  ["numPlayers",     "Players"],
-  ["startingRole",   "Starting Role"],
-  ["startingTeam",   "Starting Team"],
-  ["midGameRole",    "Mid Game Role"],
-  ["midGameTeam",    "Mid Game Team"],
-  ["endingRole",     "Ending Role"],
-  ["endingTeam",     "Ending Team"],
-  ["startDemon",     "Start Demon"],
-  ["endDemon",       "End Demon"],
-  ["winningTeam",    "Winning Team"],
-  ["winLoss",        "Result"],
-  ["lastNight",      "Last Day"],
-  ["specialWinType", "Special Win Type"],
-  ["roleNotes",      "Role Notes"],
-  ["livedDiedNotes", "Lived / Died / Executed / Exiled"],
-  ["fabled1",        "Fabled 1"],
-  ["fabled2",        "Fabled 2"],
-  ["fabled3",        "Fabled 3"],
-  ["fabledNotes",    "Fabled Notes"],
-  ["loric1",         "Loric 1"],
-  ["loric2",         "Loric 2"],
-  ["loricNotes",     "Loric Notes"],
-];
+// Inline monochrome SVG icons for the Game stats card. stroke=currentColor
+// + fill=none gives crisp single-color rendering at any size; .detail-stat
+// svg in styles.css sizes them and colors them var(--text-muted).
+const ICONS = {
+  demon:   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 4l3 5"/><path d="M19 4l-3 5"/><circle cx="12" cy="14" r="6"/><circle cx="9.5" cy="13" r="1" fill="currentColor"/><circle cx="14.5" cy="13" r="1" fill="currentColor"/><path d="M9.5 17q2.5 1.5 5 0"/></svg>',
+  players: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="8" r="3"/><circle cx="17" cy="9.5" r="2.5"/><path d="M3 19c1-3.5 4-5 6-5s5 1.5 6 5"/><path d="M14.5 19c.6-2.4 2.6-3.5 4-3.5s2.5.8 2.5 2.5"/></svg>',
+  grimoire: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 5c3-1 6 0 9 2v13c-3-2-6-3-9-2z"/><path d="M21 5c-3-1-6 0-9 2v13c3-2 6-3 9-2z"/><path d="M12 7v13"/></svg>',
+  moon:    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 14.5A8.5 8.5 0 1 1 9.5 4a7 7 0 0 0 10.5 10.5z"/></svg>',
+};
 
 function openGameDetail(index) {
   const row = _recentRows[index];
   if (!row) return;
-  document.getElementById("gameDetailTitle").textContent = row.script;
-  document.getElementById("gameDetailBody").innerHTML = DETAIL_LABELS
-    .filter(([key]) => {
-      const v = row[key];
-      return v !== undefined && v !== "" && v !== 0;
-    })
-    .map(([key, label]) => {
-      const v = row[key];
-      return (
-        `<div class="detail-row">` +
-        `<span class="detail-label">${escHtml(label)}</span>` +
-        `<span class="detail-value">${escHtml(String(v))}</span>` +
-        `</div>`
-      );
-    })
-    .join("");
+
+  const teamCls = t => t === "Evil" ? "evil" : "good";
+  const isWin   = row.winLoss === "W";
+  const special = (row.specialWinType || "").trim();
+
+  // Subtitle parts: skip empty ones cleanly.
+  const subParts = [row.event, row.location, row.date, row.liveOnline]
+    .map(s => (s || "").toString().trim()).filter(Boolean)
+    .map(s => `<span>${escHtml(s)}</span>`).join("");
+
+  // Role section: single chip OR vertical timeline.
+  const rj = roleJourney(row);
+  let roleBlock;
+  if (rj.kind === "single") {
+    roleBlock = `<span class="detail-rolechip ${teamCls(rj.startTeam)}">` +
+                  `<span class="r">${escHtml(rj.startRole)}</span>` +
+                  `<span class="t">${escHtml(rj.startTeam || "")}</span>` +
+                `</span>`;
+  } else {
+    const nodes = [];
+    nodes.push(
+      `<div class="detail-node"><span class="detail-dot ${teamCls(rj.startTeam)}"></span>` +
+        `<div class="detail-when">Started as</div>` +
+        `<div class="detail-what ${teamCls(rj.startTeam)}">${escHtml(rj.startRole)}</div>` +
+        `<div class="detail-meta">${escHtml(rj.startTeam || "")}</div></div>`
+    );
+    if (rj.midRole) nodes.push(
+      `<div class="detail-node"><span class="detail-dot ${teamCls(rj.midTeam)}"></span>` +
+        `<div class="detail-when">Became</div>` +
+        `<div class="detail-what ${teamCls(rj.midTeam)}">${escHtml(rj.midRole)}</div>` +
+        `<div class="detail-meta">${escHtml(rj.midTeam || "")}</div></div>`
+    );
+    if (rj.endRole) nodes.push(
+      `<div class="detail-node"><span class="detail-dot ${teamCls(rj.endTeam)}"></span>` +
+        `<div class="detail-when">Ended as</div>` +
+        `<div class="detail-what ${teamCls(rj.endTeam)}">${escHtml(rj.endRole)}</div>` +
+        `<div class="detail-meta">${escHtml(rj.endTeam || "")}${rj.endIsDemon ? " · Demon" : ""}</div></div>`
+    );
+    roleBlock = `<div class="detail-tl">${nodes.join("")}</div>`;
+  }
+
+  // Game stats card.
+  const tiles = gameStats(row).map(t =>
+    `<div class="detail-stat">${ICONS[t.iconKey]}` +
+      `<div><div class="lab">${escHtml(t.label)}</div>` +
+      `<div class="val">${escHtml(t.value)}</div>` +
+      (t.subValue ? `<div class="sub">${escHtml(t.subValue)}</div>` : "") +
+      `</div></div>`
+  ).join("");
+
+  // Notes card (only if any).
+  const notes = notesBlocks(row);
+  const notesCard = notes.length === 0 ? "" :
+    `<div class="detail-card"><div class="detail-card-h">Notes</div>` +
+      notes.map(n =>
+        `<div class="detail-note"><span class="lab">${escHtml(n.label)}</span>${escHtml(n.text)}</div>`
+      ).join("") +
+    `</div>`;
+
+  // Fabled & Loric card (only if any).
+  const fl = fabledLoric(row);
+  const flCard = (fl.tags.length === 0 && fl.notes.length === 0) ? "" :
+    `<div class="detail-card"><div class="detail-card-h">Fabled &amp; Loric</div>` +
+      (fl.tags.length
+        ? `<div class="detail-tags">${fl.tags.map(n => `<span class="detail-tag">★ ${escHtml(n)}</span>`).join("")}</div>`
+        : "") +
+      fl.notes.map(n =>
+        `<div class="detail-note" style="margin-top:8px"><span class="lab">${escHtml(n.label)}</span>${escHtml(n.text)}</div>`
+      ).join("") +
+    `</div>`;
+
+  document.getElementById("gameDetailTitle").textContent = "";
+  document.getElementById("gameDetailBody").innerHTML =
+    `<div class="detail-hero">` +
+      `<div class="detail-hero-top">` +
+        `<div class="detail-title">${escHtml(row.script || "")}</div>` +
+        `<div class="detail-pill-row">` +
+          (special ? `<span class="detail-special">★ ${escHtml(special)}</span>` : "") +
+          `<span class="detail-result ${isWin ? "win" : "loss"}">${isWin ? "WIN" : "LOSS"}</span>` +
+        `</div>` +
+      `</div>` +
+      (subParts ? `<div class="detail-sub">${subParts}</div>` : "") +
+    `</div>` +
+    `<div class="detail-card"><div class="detail-card-h">Your role</div>${roleBlock}</div>` +
+    `<div class="detail-card"><div class="detail-card-h">The game</div><div class="detail-grid">${tiles}</div></div>` +
+    notesCard + flCard;
+
   document.getElementById("gameDetailSheet").classList.remove("hidden");
   document.getElementById("gameDetailBackdrop").classList.remove("hidden");
 }
