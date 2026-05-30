@@ -76,3 +76,36 @@ test("roleJourney: ended-as-demon flag is false when team is Good", () => {
   assert.equal(r.kind, "timeline");
   assert.equal(r.endIsDemon, false);
 });
+
+test("notesBlocks: empty -> []", () => {
+  const app = loadApp();
+  assert.equal(app.notesBlocks({}).length, 0);
+});
+
+test("notesBlocks: role only", () => {
+  const app = loadApp();
+  const out = app.notesBlocks({ roleNotes: "useful pings", livedDiedNotes: "" });
+  assert.equal(out.length, 1);
+  assert.equal(out[0].label, "Role");
+  assert.equal(out[0].text, "useful pings");
+});
+
+test("notesBlocks: lived only", () => {
+  const app = loadApp();
+  const out = app.notesBlocks({ roleNotes: "", livedDiedNotes: "executed day 3" });
+  assert.equal(out.length, 1);
+  assert.equal(out[0].label, "Lived / died");
+});
+
+test("notesBlocks: both, role first then lived", () => {
+  const app = loadApp();
+  const out = app.notesBlocks({ roleNotes: "a", livedDiedNotes: "b" });
+  assert.equal(out.length, 2);
+  assert.equal(out[0].label, "Role");
+  assert.equal(out[1].label, "Lived / died");
+});
+
+test("notesBlocks: whitespace-only treated as empty", () => {
+  const app = loadApp();
+  assert.equal(app.notesBlocks({ roleNotes: "   ", livedDiedNotes: "\n" }).length, 0);
+});

@@ -1485,6 +1485,17 @@ function roleJourney(row) {
   return out;
 }
 
+// Section-state helper: array of {label,text} for non-empty notes. Empty
+// array means "hide the Notes card".
+function notesBlocks(row) {
+  const out = [];
+  const role  = (row.roleNotes      || "").trim();
+  const lived = (row.livedDiedNotes || "").trim();
+  if (role)  out.push({ label: "Role",         text: role });
+  if (lived) out.push({ label: "Lived / died", text: lived });
+  return out;
+}
+
 const DETAIL_LABELS = [
   ["date",           "Date"],
   ["script",         "Script"],
