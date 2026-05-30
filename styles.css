@@ -437,19 +437,88 @@ textarea { resize: vertical; min-height: 60px; font-family: inherit; }
 .load-more-btn.loading { color: var(--text-muted); pointer-events: none; }
 
 /* ——— GAME DETAIL SHEET ——— */
-.detail-section-title {
-  font-size: 11px; font-weight: 700; letter-spacing: 0.06em;
-  text-transform: uppercase; color: var(--text-muted);
-  padding: 10px 0 4px; margin-top: 4px;
+#gameDetailSheet .sheet-body { gap: 0; }
+
+/* Hero */
+.detail-hero { padding: 2px 0 14px; }
+.detail-hero-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+.detail-title {
+  font-size: 22px; font-weight: 800; line-height: 1.15;
+  background: linear-gradient(135deg, #a29bfe, #6c5ce7);
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent;
 }
-.detail-section-title:first-child { margin-top: 0; padding-top: 0; }
-.detail-row {
-  display: flex; justify-content: space-between; align-items: flex-start;
-  padding: 8px 0; border-bottom: 1px solid var(--border); gap: 12px;
+.detail-sub { font-size: 12px; color: var(--text-muted); margin-top: 6px; display: flex; flex-wrap: wrap; gap: 6px; }
+.detail-sub span::after { content: "·"; margin-left: 6px; color: var(--border); }
+.detail-sub span:last-child::after { content: ""; }
+.detail-pill-row { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+.detail-result { font-size: 13px; font-weight: 800; padding: 6px 12px; border-radius: 999px; border: 1px solid; white-space: nowrap; }
+.detail-result.win  { color: var(--win);  border-color: var(--win);  background: var(--good-bg); }
+.detail-result.loss { color: var(--loss); border-color: var(--loss); background: var(--evil-bg); }
+.detail-special {
+  font-size: 12px; font-weight: 700; padding: 5px 10px; border-radius: 999px;
+  border: 1px solid var(--accent); color: var(--accent); background: var(--bg);
 }
-.detail-row:last-child { border-bottom: none; }
-.detail-label { font-size: 12px; color: var(--text-muted); flex-shrink: 0; }
-.detail-value { font-size: 13px; color: var(--text); text-align: right; word-break: break-word; }
+
+/* Card */
+.detail-card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 14px; margin-bottom: 10px;
+}
+.detail-card-h {
+  font-size: 11px; font-weight: 700; letter-spacing: 0.07em;
+  text-transform: uppercase; color: var(--text-muted); margin-bottom: 10px;
+}
+
+/* Role: single chip when no change */
+.detail-rolechip {
+  display: inline-flex; flex-direction: column; gap: 2px;
+  padding: 8px 12px; border-radius: 10px; border: 1px solid;
+}
+.detail-rolechip .r { font-size: 15px; font-weight: 700; }
+.detail-rolechip .t { font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; opacity: 0.85; }
+.detail-rolechip.good { color: var(--good); border-color: var(--good); background: var(--good-bg); }
+.detail-rolechip.evil { color: var(--evil); border-color: var(--evil); background: var(--evil-bg); }
+
+/* Role: vertical timeline when changed */
+.detail-tl { position: relative; padding-left: 22px; margin: 2px 0; }
+.detail-tl::before { content: ""; position: absolute; left: 5px; top: 6px; bottom: 6px; width: 2px; background: var(--border); }
+.detail-node { position: relative; padding-bottom: 12px; }
+.detail-node:last-child { padding-bottom: 0; }
+.detail-dot {
+  position: absolute; left: -22px; top: 4px;
+  width: 12px; height: 12px; border-radius: 50%;
+  border: 2px solid var(--surface);
+}
+.detail-dot.good { background: var(--good); box-shadow: 0 0 0 2px var(--good); }
+.detail-dot.evil { background: var(--evil); box-shadow: 0 0 0 2px var(--evil); }
+.detail-when { font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-muted); }
+.detail-what { font-size: 15px; font-weight: 700; margin-top: 1px; }
+.detail-what.good { color: var(--good); }
+.detail-what.evil { color: var(--evil); }
+.detail-meta { font-size: 11px; color: var(--text-muted); margin-top: 1px; }
+
+/* Game stats grid */
+.detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.detail-stat { display: flex; gap: 10px; align-items: center; }
+.detail-stat svg { width: 18px; height: 18px; color: var(--text-muted); flex-shrink: 0; }
+.detail-stat .lab { font-size: 11px; color: var(--text-muted); }
+.detail-stat .val { font-size: 14px; color: var(--text); font-weight: 600; word-break: break-word; }
+.detail-stat .sub { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+
+/* Notes */
+.detail-note { font-size: 13px; color: var(--text); line-height: 1.45; margin-bottom: 8px; }
+.detail-note:last-child { margin-bottom: 0; }
+.detail-note .lab { display: block; font-size: 11px; color: var(--text-muted); margin-bottom: 2px; }
+
+/* Fabled & Loric */
+.detail-tags { display: flex; flex-wrap: wrap; gap: 6px; }
+.detail-tag {
+  font-size: 12px; padding: 4px 10px; border-radius: 999px;
+  background: var(--bg); border: 1px solid var(--border); color: var(--text);
+}
+
+/* Cross-cutting: lock background scroll while any sheet is open */
+body.sheet-open { overflow: hidden; }
 
 /* ——— MISC ——— */
 .no-games-msg { text-align: center; color: var(--text-muted); font-size: 14px; padding: 24px 0; }
