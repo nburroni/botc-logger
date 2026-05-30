@@ -511,7 +511,16 @@ document.addEventListener("DOMContentLoaded", refreshQueueBadge);
 const _armedForDelete = new Set();
 const _armTimers = new Map();
 
+// Set-based counter so the body scroll-lock releases only when every sheet
+// has closed. Each open/close pair calls this with a stable id.
+const _openSheets = new Set();
+function lockBodyScroll(id, open) {
+  if (open) _openSheets.add(id); else _openSheets.delete(id);
+  document.body.classList.toggle("sheet-open", _openSheets.size > 0);
+}
+
 function openQueueSheet() {
+  lockBodyScroll("queue", true);
   document.getElementById("queueSheetBackdrop").classList.remove("hidden");
   document.getElementById("queueSheet").classList.remove("hidden");
   renderQueueSheet();
@@ -525,6 +534,7 @@ function openQueueSheet() {
 }
 
 function closeQueueSheet() {
+  lockBodyScroll("queue", false);
   document.getElementById("queueSheetBackdrop").classList.add("hidden");
   document.getElementById("queueSheet").classList.add("hidden");
   document.removeEventListener("keydown", queueSheetKeyHandler);
@@ -762,6 +772,7 @@ function clearDebugLog() {
 
 // ——— DIAGNOSTICS SHEET ———
 function openDiagnostics() {
+  lockBodyScroll("diagnostics", true);
   document.getElementById("diagVersion").textContent = APP_VERSION;
   document.getElementById("diagConn").textContent =
     (ENDPOINT ? "configured" : "not connected") + (navigator.onLine ? " · online" : " · offline");
@@ -773,6 +784,7 @@ function openDiagnostics() {
 }
 
 function closeDiagnostics() {
+  lockBodyScroll("diagnostics", false);
   document.getElementById("diagBackdrop").classList.add("hidden");
   document.getElementById("diagSheet").classList.add("hidden");
 }
@@ -1553,6 +1565,7 @@ const ICONS = {
 function openGameDetail(index) {
   const row = _recentRows[index];
   if (!row) return;
+  lockBodyScroll("gameDetail", true);
 
   const teamCls = t => t === "Evil" ? "evil" : "good";
   const isWin   = row.winLoss === "W";
@@ -1645,6 +1658,7 @@ function openGameDetail(index) {
 }
 
 function closeGameDetail() {
+  lockBodyScroll("gameDetail", false);
   document.getElementById("gameDetailSheet").classList.add("hidden");
   document.getElementById("gameDetailBackdrop").classList.add("hidden");
 }
