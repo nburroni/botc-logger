@@ -109,3 +109,56 @@ test("notesBlocks: whitespace-only treated as empty", () => {
   const app = loadApp();
   assert.equal(app.notesBlocks({ roleNotes: "   ", livedDiedNotes: "\n" }).length, 0);
 });
+
+test("fabledLoric: empty -> empty tags and notes", () => {
+  const app = loadApp();
+  const r = app.fabledLoric({});
+  assert.equal(r.tags.length, 0);
+  assert.equal(r.notes.length, 0);
+});
+
+test("fabledLoric: names only", () => {
+  const app = loadApp();
+  const r = app.fabledLoric({
+    fabled1: "Doomsayer", fabled2: "Sentinel", fabled3: "",
+    loric1: "Bootlegger", loric2: "",
+  });
+  assert.equal(r.tags.length, 3);
+  assert.equal(r.tags[0], "Doomsayer");
+  assert.equal(r.tags[1], "Sentinel");
+  assert.equal(r.tags[2], "Bootlegger");
+  assert.equal(r.notes.length, 0);
+});
+
+test("fabledLoric: notes only", () => {
+  const app = loadApp();
+  const r = app.fabledLoric({
+    fabledNotes: "Sentinel chose 8", loricNotes: "Bootlegger: 'no public chat'",
+  });
+  assert.equal(r.tags.length, 0);
+  assert.equal(r.notes.length, 2);
+  assert.equal(r.notes[0].label, "Fabled notes");
+  assert.equal(r.notes[0].text, "Sentinel chose 8");
+  assert.equal(r.notes[1].label, "Loric notes");
+  assert.equal(r.notes[1].text, "Bootlegger: 'no public chat'");
+});
+
+test("fabledLoric: mixed tags + notes", () => {
+  const app = loadApp();
+  const r = app.fabledLoric({
+    fabled1: "Doomsayer", fabledNotes: "rule applied",
+    loric1: "", loric2: "Hindu",
+  });
+  assert.equal(r.tags.length, 2);
+  assert.equal(r.tags[0], "Doomsayer");
+  assert.equal(r.tags[1], "Hindu");
+  assert.equal(r.notes.length, 1);
+  assert.equal(r.notes[0].label, "Fabled notes");
+  assert.equal(r.notes[0].text, "rule applied");
+});
+
+test("fabledLoric: whitespace-only names ignored", () => {
+  const app = loadApp();
+  const r = app.fabledLoric({ fabled1: "   ", loric1: "" });
+  assert.equal(r.tags.length, 0);
+});

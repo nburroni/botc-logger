@@ -1496,6 +1496,20 @@ function notesBlocks(row) {
   return out;
 }
 
+// Section-state helper: returns the names (for tag pills) and the notes
+// (for small captions). Tags + notes both empty means "hide the F&L card".
+function fabledLoric(row) {
+  const names = ["fabled1", "fabled2", "fabled3", "loric1", "loric2"]
+    .map(k => (row[k] || "").trim())
+    .filter(s => s.length > 0);
+  const notes = [];
+  const fNotes = (row.fabledNotes || "").trim();
+  const lNotes = (row.loricNotes  || "").trim();
+  if (fNotes) notes.push({ label: "Fabled notes", text: fNotes });
+  if (lNotes) notes.push({ label: "Loric notes",  text: lNotes });
+  return { tags: names, notes };
+}
+
 const DETAIL_LABELS = [
   ["date",           "Date"],
   ["script",         "Script"],
