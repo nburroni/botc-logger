@@ -1510,6 +1510,22 @@ function fabledLoric(row) {
   return { tags: names, notes };
 }
 
+// Section-state helper: four tile objects in fixed order for the Game card.
+// iconKey is used by the render to look up an inline SVG from ICONS.
+function gameStats(row) {
+  const startD = (row.startDemon || "").trim();
+  const endD   = (row.endDemon   || "").trim();
+  const subDemon = (endD && endD !== startD) ? "→ " + endD : undefined;
+  const tiles = [
+    { iconKey: "demon",   label: "Demon",       value: startD || "—" },
+    { iconKey: "players", label: "Players",     value: String(row.numPlayers || "—") },
+    { iconKey: "grimoire", label: "Storyteller", value: (row.storyteller || "").trim() || "—" },
+    { iconKey: "moon",    label: "Last day",    value: row.lastNight === "Y" ? "Yes" : "No" },
+  ];
+  if (subDemon) tiles[0].subValue = subDemon;
+  return tiles;
+}
+
 const DETAIL_LABELS = [
   ["date",           "Date"],
   ["script",         "Script"],

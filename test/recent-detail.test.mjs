@@ -162,3 +162,52 @@ test("fabledLoric: whitespace-only names ignored", () => {
   const r = app.fabledLoric({ fabled1: "   ", loric1: "" });
   assert.equal(r.tags.length, 0);
 });
+
+test("gameStats: standard game produces 4 tiles in fixed order", () => {
+  const app = loadApp();
+  const tiles = app.gameStats({
+    startDemon: "Imp", numPlayers: 10, storyteller: "Devon", lastNight: "N",
+  });
+  assert.equal(tiles.length, 4);
+  assert.equal(tiles[0].iconKey, "demon");
+  assert.equal(tiles[1].iconKey, "players");
+  assert.equal(tiles[2].iconKey, "grimoire");
+  assert.equal(tiles[3].iconKey, "moon");
+  assert.equal(tiles[0].label, "Demon");
+  assert.equal(tiles[1].label, "Players");
+  assert.equal(tiles[2].label, "Storyteller");
+  assert.equal(tiles[3].label, "Last day");
+  assert.equal(tiles[0].value, "Imp");
+  assert.equal(tiles[1].value, "10");
+  assert.equal(tiles[2].value, "Devon");
+  assert.equal(tiles[3].value, "No");
+  assert.equal(tiles[0].subValue, undefined);
+});
+
+test("gameStats: endDemon differs -> Demon tile has subValue", () => {
+  const app = loadApp();
+  const tiles = app.gameStats({
+    startDemon: "Imp", endDemon: "Pukka",
+    numPlayers: 9, storyteller: "Devon", lastNight: "Y",
+  });
+  assert.equal(tiles[0].subValue, "→ Pukka");
+});
+
+test("gameStats: missing storyteller renders as em dash", () => {
+  const app = loadApp();
+  const tiles = app.gameStats({
+    startDemon: "Imp", numPlayers: 10, storyteller: "", lastNight: "Y",
+  });
+  assert.equal(tiles[2].value, "—");
+  assert.equal(tiles[3].value, "Yes"); // lastNight Y -> Yes
+});
+
+test("gameStats: lastNight values -> Yes/No/No", () => {
+  const app = loadApp();
+  const tY = app.gameStats({ startDemon: "x", numPlayers: 7, storyteller: "x", lastNight: "Y" });
+  const tN = app.gameStats({ startDemon: "x", numPlayers: 7, storyteller: "x", lastNight: "N" });
+  const tE = app.gameStats({ startDemon: "x", numPlayers: 7, storyteller: "x", lastNight: ""  });
+  assert.equal(tY[3].value, "Yes");
+  assert.equal(tN[3].value, "No");
+  assert.equal(tE[3].value, "No");
+});
