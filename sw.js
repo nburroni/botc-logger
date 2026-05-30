@@ -8,7 +8,7 @@
 // Bump CACHE_VERSION whenever the shell changes. No build step — a literal
 // constant is the source of truth.
 
-const CACHE_VERSION = "v5";
+const CACHE_VERSION = "v6";
 const CACHE_NAME = `botc-logger-${CACHE_VERSION}`;
 const SHELL = [
   "/botc-logger/",
