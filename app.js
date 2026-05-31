@@ -44,7 +44,7 @@ const ALL_LORICS = [
 // ——— CONFIG ———
 // Bump alongside CACHE_VERSION in sw.js on every release so the Diagnostics
 // panel shows which build is running and the user can confirm a force-update.
-const APP_VERSION = "v7 (2026-05-31)";
+const APP_VERSION = "v8 (2026-05-31)";
 const STORAGE_KEY = "botc_logger_endpoint";
 const AUTH_KEY = "botc_logger_auth";
 const GAME_INFO_KEY = "botc_logger_game_info";
@@ -52,7 +52,7 @@ const GAME_INFO_FIELDS = ["event","location","liveOnline","script","storyteller"
 let ENDPOINT = "";
 let AUTH_HASH = "";
 // Dynamic options from sheet (merged with static on load)
-let DYNAMIC = { events: [], locations: [], scripts: [], storytellers: [], roles: [], demons: [], fabled: [], lorics: [] };
+let DYNAMIC = { events: [], locations: [], scripts: [], storytellers: [], roles: [], demons: [], fabled: [], lorics: [], travellers: [] };
 
 // ——— INIT ———
 document.addEventListener("DOMContentLoaded", () => {
@@ -82,6 +82,9 @@ document.addEventListener("DOMContentLoaded", () => {
   setupAutocomplete("fabled3",      () => mergeUnique(ALL_FABLED, DYNAMIC.fabled));
   setupAutocomplete("loric1",       () => mergeUnique(ALL_LORICS, DYNAMIC.lorics));
   setupAutocomplete("loric2",       () => mergeUnique(ALL_LORICS, DYNAMIC.lorics));
+  setupAutocomplete("traveller1",   () => mergeUnique(ALL_ROLES, DYNAMIC.travellers));
+  setupAutocomplete("traveller2",   () => mergeUnique(ALL_ROLES, DYNAMIC.travellers));
+  setupAutocomplete("traveller3",   () => mergeUnique(ALL_ROLES, DYNAMIC.travellers));
   setupAutocomplete("specialWinType", () => mergeUnique(ALL_ROLES, DYNAMIC.roles));
 
   // Live-clear validation errors as required fields are filled
@@ -634,6 +637,12 @@ function openQueueDetail(id, bucket) {
     ["fabled1","Fabled 1"],["fabled2","Fabled 2"],["fabled3","Fabled 3"],
     ["fabledNotes","Fabled Notes"],["loric1","Loric 1"],["loric2","Loric 2"],
     ["loricNotes","Loric Notes"],
+    ["traveller1","Traveller 1"],["traveller1GE","Traveller 1 G/E"],
+    ["traveller2","Traveller 2"],["traveller2GE","Traveller 2 G/E"],
+    ["traveller3","Traveller 3"],["traveller3GE","Traveller 3 G/E"],
+    ["travellerNotes","Traveller Notes"],
+    ["wizardGame","Wizard Game"],["wishNotes","Wish Notes"],
+    ["winLossNotes","Win/Loss Notes"],["overallGameNotes","Overall Game Notes"],
   ];
   const dataRows = queueDetailFields
     .filter(([key]) => {
@@ -703,7 +712,10 @@ const CSV_FIELDS = [
   "winningTeam", "winLoss", "lastNight",
   "fabled1", "fabled2", "fabled3", "fabledNotes",
   "loric1", "loric2", "loricNotes",
+  "traveller1", "traveller1GE", "traveller2", "traveller2GE",
+  "traveller3", "traveller3GE", "travellerNotes",
   "specialWinType",
+  "wizardGame", "wishNotes", "winLossNotes", "overallGameNotes",
 ];
 const CSV_META_FIELDS = ["bucket", "id", "createdAt", "attempts", "lastError"];
 
@@ -861,7 +873,7 @@ function clearSession(toastMsg) {
   _recentHasMore = false;
   _recentLoaded  = false;
   _recentLoading = false;
-  DYNAMIC = { events: [], locations: [], scripts: [], storytellers: [], roles: [], demons: [], fabled: [], lorics: [] };
+  DYNAMIC = { events: [], locations: [], scripts: [], storytellers: [], roles: [], demons: [], fabled: [], lorics: [], travellers: [] };
   document.getElementById("setupUrl").value = "";
   document.getElementById("setupPassword").value = "";
   document.getElementById("setupOverlay").classList.remove("hidden");
@@ -1178,7 +1190,18 @@ async function submitGame(e) {
     fabledNotes:    document.getElementById("fabledNotes").value.trim(),
     loric1:         document.getElementById("loric1").value.trim(),
     loric2:         document.getElementById("loric2").value.trim(),
-    loricNotes:     document.getElementById("loricNotes").value.trim()
+    loricNotes:     document.getElementById("loricNotes").value.trim(),
+    traveller1:     document.getElementById("traveller1").value.trim(),
+    traveller1GE:   document.getElementById("traveller1GE").value,
+    traveller2:     document.getElementById("traveller2").value.trim(),
+    traveller2GE:   document.getElementById("traveller2GE").value,
+    traveller3:     document.getElementById("traveller3").value.trim(),
+    traveller3GE:   document.getElementById("traveller3GE").value,
+    travellerNotes: document.getElementById("travellerNotes").value.trim(),
+    wizardGame:     document.getElementById("wizardGame").value,
+    wishNotes:      document.getElementById("wishNotes").value.trim(),
+    winLossNotes:   document.getElementById("winLossNotes").value.trim(),
+    overallGameNotes: document.getElementById("overallGameNotes").value.trim()
   };
 
   try {
@@ -1215,10 +1238,13 @@ async function submitGame(e) {
 function resetFormForNextGame() {
   ["startingRole","midGameRole","endingRole","roleNotes","livedDiedNotes",
    "startDemon","endDemon","lastNight","specialWinType","fabled1","fabled2","fabled3",
-   "fabledNotes","loric1","loric2","loricNotes"].forEach(id => {
+   "fabledNotes","loric1","loric2","loricNotes",
+   "traveller1","traveller2","traveller3","travellerNotes",
+   "wizardGame","wishNotes","winLossNotes","overallGameNotes"].forEach(id => {
     document.getElementById(id).value = "";
   });
-  ["startingTeam","midGameTeam","endingTeam","winningTeam","winLoss"].forEach(id => {
+  ["startingTeam","midGameTeam","endingTeam","winningTeam","winLoss",
+   "traveller1GE","traveller2GE","traveller3GE"].forEach(id => {
     document.getElementById(id).value = "";
   });
   document.querySelectorAll(".chip").forEach(c => c.classList.remove("selected"));
@@ -1226,6 +1252,8 @@ function resetFormForNextGame() {
   document.getElementById("midGameToggle").textContent = "+ Role changed mid-game";
   document.getElementById("fabledContent").classList.remove("show");
   document.getElementById("fabledToggle").textContent = "+ Add Fabled / Loric characters";
+  document.getElementById("travellersContent").classList.remove("show");
+  document.getElementById("travellersToggle").textContent = "+ Add travellers";
   window.scrollTo({ top: 0, behavior: "smooth" });
 }
 

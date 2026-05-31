@@ -53,9 +53,23 @@ const COL = {
   LORIC_1: 25,        // Y
   LORIC_2: 26,        // Z
   LORIC_NOTES: 27,    // AA
-  CLIENT_ID: 28,      // AB — idempotency key written by the client; prevents duplicate rows on retry
-  SPECIAL_WIN_TYPE: 35 // AI
+  TRAVELLER_1: 28,      // AB
+  TRAVELLER_1_GE: 29,   // AC — Good/Evil
+  TRAVELLER_2: 30,      // AD
+  TRAVELLER_2_GE: 31,   // AE
+  TRAVELLER_3: 32,      // AF
+  TRAVELLER_3_GE: 33,   // AG
+  TRAVELLER_NOTES: 34,  // AH
+  SPECIAL_WIN_TYPE: 35, // AI
+  WIZARD_GAME: 36,      // AJ
+  WISH_NOTES: 37,       // AK
+  WIN_LOSS_NOTES: 38,   // AL
+  OVERALL_GAME_NOTES: 39, // AM
+  CLIENT_ID: 40       // AN — idempotency key written by the client; prevents duplicate rows on retry
 };
+
+// Total number of data columns written/read per row (A–AN).
+const NUM_COLS = 40;
 
 /**
  * Handle GET requests — returns current dropdown options from existing data
@@ -80,7 +94,7 @@ function doGet(e) {
       if (lastDataRow < 3) {
         return jsonResponse({ rows: [], total: 0, hasMore: false });
       }
-      const all = sheet.getRange(3, 1, lastDataRow - 2, 35).getValues()
+      const all = sheet.getRange(3, 1, lastDataRow - 2, NUM_COLS).getValues()
         .filter(r => r[COL.DATE - 1] !== "" && r[COL.DATE - 1] !== null);
       const total  = all.length;
       const rawLimit = parseInt(e.parameter.limit);
@@ -99,7 +113,7 @@ function doGet(e) {
       return jsonpResponse({ options: getEmptyOptions() }, callback);
     }
 
-    const data = sheet.getRange(3, 1, lastRow - 2, 35).getValues();
+    const data = sheet.getRange(3, 1, lastRow - 2, NUM_COLS).getValues();
 
     const options = {
       events: uniqueNonEmpty(data.map(r => r[COL.EVENT - 1])),
@@ -123,6 +137,11 @@ function doGet(e) {
       lorics: uniqueNonEmpty([
         ...data.map(r => r[COL.LORIC_1 - 1]),
         ...data.map(r => r[COL.LORIC_2 - 1])
+      ]),
+      travellers: uniqueNonEmpty([
+        ...data.map(r => r[COL.TRAVELLER_1 - 1]),
+        ...data.map(r => r[COL.TRAVELLER_2 - 1]),
+        ...data.map(r => r[COL.TRAVELLER_3 - 1])
       ])
     };
 
@@ -172,8 +191,8 @@ function doPost(e) {
       }
     }
 
-    // Build the row array matching columns A–AI
-    const row = new Array(35).fill("");
+    // Build the row array matching columns A–AN
+    const row = new Array(NUM_COLS).fill("");
 
     row[COL.DATE - 1]           = body.date || "";
     row[COL.EVENT - 1]          = body.event || "";
@@ -202,15 +221,26 @@ function doPost(e) {
     row[COL.LORIC_1 - 1]        = body.loric1 || "";
     row[COL.LORIC_2 - 1]        = body.loric2 || "";
     row[COL.LORIC_NOTES - 1]     = body.loricNotes || "";
+    row[COL.TRAVELLER_1 - 1]      = body.traveller1 || "";
+    row[COL.TRAVELLER_1_GE - 1]   = body.traveller1GE || "";
+    row[COL.TRAVELLER_2 - 1]      = body.traveller2 || "";
+    row[COL.TRAVELLER_2_GE - 1]   = body.traveller2GE || "";
+    row[COL.TRAVELLER_3 - 1]      = body.traveller3 || "";
+    row[COL.TRAVELLER_3_GE - 1]   = body.traveller3GE || "";
+    row[COL.TRAVELLER_NOTES - 1]  = body.travellerNotes || "";
     row[COL.SPECIAL_WIN_TYPE - 1] = body.specialWinType || "";
-    row[COL.CLIENT_ID - 1]       = clientId; // store idempotency key (col AB)
+    row[COL.WIZARD_GAME - 1]      = body.wizardGame || "";
+    row[COL.WISH_NOTES - 1]       = body.wishNotes || "";
+    row[COL.WIN_LOSS_NOTES - 1]   = body.winLossNotes || "";
+    row[COL.OVERALL_GAME_NOTES - 1] = body.overallGameNotes || "";
+    row[COL.CLIENT_ID - 1]       = clientId; // store idempotency key (col AN)
 
     // `appendRow` / `getLastRow` count rows that only have data-validation or
     // formatting, so on this sheet they land ~1000 rows below the real data.
     // Instead, find the last row that actually has a DATE value and write the
     // next row directly.
     const newRow = Math.max(lastDataRow + 1, 3); // data starts at row 3
-    sheet.getRange(newRow, 1, 1, 35).setValues([row]);
+    sheet.getRange(newRow, 1, 1, NUM_COLS).setValues([row]);
 
     if (body.date) {
       sheet.getRange(newRow, COL.DATE).setNumberFormat("d MMM yyyy");
@@ -255,7 +285,8 @@ function getEmptyOptions() {
     roles: [],
     demons: [],
     fabled: [],
-    lorics: []
+    lorics: [],
+    travellers: []
   };
 }
 
@@ -275,7 +306,7 @@ function missingRequiredFields(body) {
   return missing;
 }
 
-// Scans column AB (CLIENT_ID) backwards from the last data row looking for
+// Scans column AN (CLIENT_ID) backwards from the last data row looking for
 // a matching clientId. Returns the 1-indexed sheet row number, or 0 if not
 // found. Searching backwards is faster because retries are recent.
 function findRowByClientId(sheet, clientId, lastDataRow) {
@@ -325,6 +356,17 @@ function rowToHistoryEntry(row) {
     loric1:         String(row[COL.LORIC_1 - 1]          || ""),
     loric2:         String(row[COL.LORIC_2 - 1]          || ""),
     loricNotes:     String(row[COL.LORIC_NOTES - 1]      || ""),
+    traveller1:      String(row[COL.TRAVELLER_1 - 1]      || ""),
+    traveller1GE:    String(row[COL.TRAVELLER_1_GE - 1]   || ""),
+    traveller2:      String(row[COL.TRAVELLER_2 - 1]      || ""),
+    traveller2GE:    String(row[COL.TRAVELLER_2_GE - 1]   || ""),
+    traveller3:      String(row[COL.TRAVELLER_3 - 1]      || ""),
+    traveller3GE:    String(row[COL.TRAVELLER_3_GE - 1]   || ""),
+    travellerNotes:  String(row[COL.TRAVELLER_NOTES - 1]  || ""),
+    wizardGame:      String(row[COL.WIZARD_GAME - 1]      || ""),
+    wishNotes:       String(row[COL.WISH_NOTES - 1]       || ""),
+    winLossNotes:    String(row[COL.WIN_LOSS_NOTES - 1]   || ""),
+    overallGameNotes: String(row[COL.OVERALL_GAME_NOTES - 1] || ""),
   };
 }
 
