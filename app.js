@@ -44,7 +44,7 @@ const ALL_LORICS = [
 // ——— CONFIG ———
 // Bump alongside CACHE_VERSION in sw.js on every release so the Diagnostics
 // panel shows which build is running and the user can confirm a force-update.
-const APP_VERSION = "v6 (2026-05-30)";
+const APP_VERSION = "v7 (2026-05-31)";
 const STORAGE_KEY = "botc_logger_endpoint";
 const AUTH_KEY = "botc_logger_auth";
 const GAME_INFO_KEY = "botc_logger_game_info";
@@ -973,6 +973,16 @@ function setupAutocomplete(fieldId, optionsFn) {
   const list = document.getElementById(fieldId + "-ac");
   input.addEventListener("focus", () => showSuggestions(input, list, optionsFn));
   input.addEventListener("input", () => showSuggestions(input, list, optionsFn));
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Tab") {
+      list.classList.remove("show");
+    } else if (e.key === "Escape") {
+      list.classList.remove("show");
+      e.preventDefault();
+    } else if (e.key === "Enter" && list.classList.contains("show")) {
+      list.classList.remove("show");
+    }
+  });
 }
 
 function showSuggestions(input, list, optionsFn) {
