@@ -290,6 +290,17 @@ textarea { resize: vertical; min-height: 60px; font-family: inherit; }
   .sheet.hidden { transform: translate(-50%, 120%); }
 }
 
+/* DESKTOP — 2-column form layout */
+@media (min-width: 768px) {
+  .form-container, .tab-bar { max-width: 920px; }
+  .form-cols {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    align-items: start;
+  }
+}
+
 /* QUEUE ROW */
 .queue-row {
   background: var(--bg);

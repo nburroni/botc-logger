@@ -973,6 +973,16 @@ function setupAutocomplete(fieldId, optionsFn) {
   const list = document.getElementById(fieldId + "-ac");
   input.addEventListener("focus", () => showSuggestions(input, list, optionsFn));
   input.addEventListener("input", () => showSuggestions(input, list, optionsFn));
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Tab") {
+      list.classList.remove("show");
+    } else if (e.key === "Escape") {
+      list.classList.remove("show");
+      e.preventDefault();
+    } else if (e.key === "Enter" && list.classList.contains("show")) {
+      list.classList.remove("show");
+    }
+  });
 }
 
 function showSuggestions(input, list, optionsFn) {
