@@ -50,7 +50,9 @@
 <!-- FORM -->
 <div class="form-container">
   <form id="gameForm" onsubmit="submitGame(event)">
+    <div class="form-cols">
 
+    <div class="form-col">
     <!-- GAME INFO -->
     <div class="section">
       <div class="section-title"><span class="icon">&#9883;</span> Game Info</div>
@@ -108,6 +110,65 @@
       </div>
     </div>
 
+    <!-- FABLED & LORIC -->
+    <div class="section">
+      <div class="section-title"><span class="icon">&#9734;</span> Fabled &amp; Loric</div>
+      <button type="button" class="collapsible-toggle" id="fabledToggle" onclick="toggleSection('fabled')">
+        + Add Fabled / Loric characters
+      </button>
+      <div class="collapsible-content" id="fabledContent">
+        <div class="field">
+          <label>Fabled 1</label>
+          <div class="autocomplete-wrapper">
+            <input type="text" id="fabled1" autocomplete="off">
+            <div class="autocomplete-list" id="fabled1-ac"></div>
+          </div>
+        </div>
+        <div class="row">
+          <div class="field">
+            <label>Fabled 2</label>
+            <div class="autocomplete-wrapper">
+              <input type="text" id="fabled2" autocomplete="off">
+              <div class="autocomplete-list" id="fabled2-ac"></div>
+            </div>
+          </div>
+          <div class="field">
+            <label>Fabled 3</label>
+            <div class="autocomplete-wrapper">
+              <input type="text" id="fabled3" autocomplete="off">
+              <div class="autocomplete-list" id="fabled3-ac"></div>
+            </div>
+          </div>
+        </div>
+        <div class="field">
+          <label>Fabled Notes</label>
+          <textarea id="fabledNotes" placeholder="Notes about fabled characters"></textarea>
+        </div>
+        <div class="row">
+          <div class="field">
+            <label>Loric 1</label>
+            <div class="autocomplete-wrapper">
+              <input type="text" id="loric1" autocomplete="off">
+              <div class="autocomplete-list" id="loric1-ac"></div>
+            </div>
+          </div>
+          <div class="field">
+            <label>Loric 2</label>
+            <div class="autocomplete-wrapper">
+              <input type="text" id="loric2" autocomplete="off">
+              <div class="autocomplete-list" id="loric2-ac"></div>
+            </div>
+          </div>
+        </div>
+        <div class="field">
+          <label>Loric Notes</label>
+          <textarea id="loricNotes" placeholder="Notes about loric characters"></textarea>
+        </div>
+      </div>
+    </div>
+    </div><!-- /form-col left -->
+
+    <div class="form-col">
     <!-- YOUR ROLE -->
     <div class="section">
       <div class="section-title"><span class="icon">&#9816;</span> Your Role</div>
@@ -223,63 +284,6 @@
       </div>
     </div>
 
-    <!-- FABLED & LORIC -->
-    <div class="section">
-      <div class="section-title"><span class="icon">&#9734;</span> Fabled &amp; Loric</div>
-      <button type="button" class="collapsible-toggle" id="fabledToggle" onclick="toggleSection('fabled')">
-        + Add Fabled / Loric characters
-      </button>
-      <div class="collapsible-content" id="fabledContent">
-        <div class="field">
-          <label>Fabled 1</label>
-          <div class="autocomplete-wrapper">
-            <input type="text" id="fabled1" autocomplete="off">
-            <div class="autocomplete-list" id="fabled1-ac"></div>
-          </div>
-        </div>
-        <div class="row">
-          <div class="field">
-            <label>Fabled 2</label>
-            <div class="autocomplete-wrapper">
-              <input type="text" id="fabled2" autocomplete="off">
-              <div class="autocomplete-list" id="fabled2-ac"></div>
-            </div>
-          </div>
-          <div class="field">
-            <label>Fabled 3</label>
-            <div class="autocomplete-wrapper">
-              <input type="text" id="fabled3" autocomplete="off">
-              <div class="autocomplete-list" id="fabled3-ac"></div>
-            </div>
-          </div>
-        </div>
-        <div class="field">
-          <label>Fabled Notes</label>
-          <textarea id="fabledNotes" placeholder="Notes about fabled characters"></textarea>
-        </div>
-        <div class="row">
-          <div class="field">
-            <label>Loric 1</label>
-            <div class="autocomplete-wrapper">
-              <input type="text" id="loric1" autocomplete="off">
-              <div class="autocomplete-list" id="loric1-ac"></div>
-            </div>
-          </div>
-          <div class="field">
-            <label>Loric 2</label>
-            <div class="autocomplete-wrapper">
-              <input type="text" id="loric2" autocomplete="off">
-              <div class="autocomplete-list" id="loric2-ac"></div>
-            </div>
-          </div>
-        </div>
-        <div class="field">
-          <label>Loric Notes</label>
-          <textarea id="loricNotes" placeholder="Notes about loric characters"></textarea>
-        </div>
-      </div>
-    </div>
-
     <!-- NOTES -->
     <div class="section">
       <div class="section-title"><span class="icon">&#128221;</span> Notes</div>
@@ -292,6 +296,9 @@
         <textarea id="livedDiedNotes" placeholder="e.g. Executed day 2, died night 3"></textarea>
       </div>
     </div>
+    </div><!-- /form-col right -->
+
+    </div><!-- /form-cols -->
 
     <button type="submit" class="submit-btn" id="submitBtn">
       <span class="btn-text">Log Game</span>
