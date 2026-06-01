@@ -61,3 +61,41 @@ test("doPost: accepts a complete payload and writes one row", () => {
   assert.equal(body.success, true);
   assert.equal(sheet.writes.length, 1);
 });
+
+test("doPost: writes traveller and extra columns to the right places (A–AN)", () => {
+  const sheet = makeSheet();
+  const gas = loadGas({ properties: { PASSWORD_HASH: "h" }, sheet });
+  const payload = Object.assign({ key: "h", clientId: "cid-trav" }, COMPLETE, {
+    traveller1: "Apprentice", traveller1GE: "Good",
+    traveller3: "Gangster", traveller3GE: "Evil",
+    travellerNotes: "joined N2",
+    wizardGame: "Y", wishNotes: "wished X",
+    winLossNotes: "demon exe", overallGameNotes: "fun",
+  });
+  gas.doPost({ postData: { contents: JSON.stringify(payload) } });
+  const row = sheet.writes[0]; // 0-based array; COL values are 1-based
+  assert.equal(row.length, 40);          // A–AN
+  assert.equal(row[27], "Apprentice");   // AB TRAVELLER_1
+  assert.equal(row[28], "Good");         // AC TRAVELLER_1_GE
+  assert.equal(row[31], "Gangster");     // AF TRAVELLER_3
+  assert.equal(row[32], "Evil");         // AG TRAVELLER_3_GE
+  assert.equal(row[33], "joined N2");    // AH TRAVELLER_NOTES
+  assert.equal(row[35], "Y");            // AJ WIZARD_GAME
+  assert.equal(row[36], "wished X");     // AK WISH_NOTES
+  assert.equal(row[37], "demon exe");    // AL WIN_LOSS_NOTES
+  assert.equal(row[38], "fun");          // AM OVERALL_GAME_NOTES
+  assert.equal(row[39], "cid-trav");     // AN CLIENT_ID (relocated from AB)
+});
+
+test("rowToHistoryEntry: reads traveller and extra columns back", () => {
+  const gas = loadGas({ properties: { PASSWORD_HASH: "h" } });
+  const row = new Array(40).fill("");
+  row[27] = "Apprentice"; row[28] = "Good";
+  row[33] = "tnotes"; row[35] = "N"; row[38] = "overall";
+  const e = gas.rowToHistoryEntry(row);
+  assert.equal(e.traveller1, "Apprentice");
+  assert.equal(e.traveller1GE, "Good");
+  assert.equal(e.travellerNotes, "tnotes");
+  assert.equal(e.wizardGame, "N");
+  assert.equal(e.overallGameNotes, "overall");
+});
