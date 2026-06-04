@@ -1297,6 +1297,40 @@ async function submitGame(e) {
   };
 
   try {
+    if (EDITING) {
+      // Online-only update — never queued. A stale queued edit could overwrite
+      // newer data or target a shifted row.
+      if (!navigator.onLine) {
+        showToast("Can't edit while offline", "error");
+        return;
+      }
+      const updatePayload = Object.assign({}, payload, {
+        action: "update", rowNum: EDITING.rowNum,
+      });
+      dlog("edit:sending", redactPayload(updatePayload));
+      const result = await postPayload(updatePayload);
+      if (result.ok) {
+        showToast(
+          result.provisional ? "Game updated — please verify in sheet"
+                             : "Game updated",
+          "success"
+        );
+        cancelEdit();             // clears EDITING, resets form, hides banner
+        // Refresh Recent so the row shows new values. loadRecentGames CONCATs
+        // onto _recentRows, so reset the accumulator first or page 0 duplicates.
+        _recentRows = [];
+        _recentOffset = 0;
+        loadRecentGames(0);
+        loadOptions();
+      } else if (result.authError) {
+        clearSession("Wrong password — please re-enter");
+      } else {
+        // networkError or userError — keep edit mode active so the user retries.
+        showToast("Update failed: " + (result.err || "unknown"), "error");
+      }
+      return;
+    }
+
     const result = await submitViaQueue(payload);
 
     if (result.synced) {
