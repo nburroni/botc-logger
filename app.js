@@ -44,7 +44,7 @@ const ALL_LORICS = [
 // ——— CONFIG ———
 // Bump alongside CACHE_VERSION in sw.js on every release so the Diagnostics
 // panel shows which build is running and the user can confirm a force-update.
-const APP_VERSION = "v8 (2026-05-31)";
+const APP_VERSION = "v9 (2026-06-03)";
 const STORAGE_KEY = "botc_logger_endpoint";
 const AUTH_KEY = "botc_logger_auth";
 const GAME_INFO_KEY = "botc_logger_game_info";
