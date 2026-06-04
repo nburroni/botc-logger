@@ -95,14 +95,15 @@ function doGet(e) {
         return jsonResponse({ rows: [], total: 0, hasMore: false });
       }
       const all = sheet.getRange(3, 1, lastDataRow - 2, NUM_COLS).getValues()
-        .filter(r => r[COL.DATE - 1] !== "" && r[COL.DATE - 1] !== null);
+        .map((r, i) => ({ r: r, rowNum: i + 3 }))
+        .filter(o => o.r[COL.DATE - 1] !== "" && o.r[COL.DATE - 1] !== null);
       const total  = all.length;
       const rawLimit = parseInt(e.parameter.limit);
       const limit    = Math.min(Math.max(isNaN(rawLimit) ? 10 : rawLimit, 1), 50);
       const offset = Math.max(parseInt(e.parameter.offset) || 0, 0);
       const slice  = all.slice().reverse().slice(offset, offset + limit);
       return jsonResponse({
-        rows:    slice.map(rowToHistoryEntry),
+        rows:    slice.map(o => rowToHistoryEntry(o.r, o.rowNum)),
         total:   total,
         hasMore: offset + limit < total,
       });
@@ -319,7 +320,7 @@ function findRowByClientId(sheet, clientId, lastDataRow) {
   return 0;
 }
 
-function rowToHistoryEntry(row) {
+function rowToHistoryEntry(row, rowNum) {
   const dateVal = row[COL.DATE - 1];
   let dateStr = "";
   if (dateVal instanceof Date && !isNaN(dateVal)) {
@@ -328,6 +329,7 @@ function rowToHistoryEntry(row) {
     dateStr = String(dateVal);
   }
   return {
+    rowNum:         rowNum || 0,
     date:           dateStr,
     script:         String(row[COL.SCRIPT - 1]          || ""),
     startingRole:   String(row[COL.STARTING_ROLE - 1]   || ""),

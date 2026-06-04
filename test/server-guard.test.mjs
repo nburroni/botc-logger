@@ -99,3 +99,11 @@ test("rowToHistoryEntry: reads traveller and extra columns back", () => {
   assert.equal(e.wizardGame, "N");
   assert.equal(e.overallGameNotes, "overall");
 });
+
+test("rowToHistoryEntry: includes the sheet row number", () => {
+  const gas = loadGas({ properties: { PASSWORD_HASH: "h" } });
+  const row = new Array(40).fill("");
+  row[0] = "2026-05-04"; // DATE col A
+  const e = gas.rowToHistoryEntry(row, 7);
+  assert.equal(e.rowNum, 7);
+});
