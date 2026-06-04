@@ -99,3 +99,107 @@ test("rowToHistoryEntry: reads traveller and extra columns back", () => {
   assert.equal(e.wizardGame, "N");
   assert.equal(e.overallGameNotes, "overall");
 });
+
+test("rowToHistoryEntry: includes the sheet row number", () => {
+  const gas = loadGas({ properties: { PASSWORD_HASH: "h" } });
+  const row = new Array(40).fill("");
+  row[0] = "2026-05-04"; // DATE col A
+  const e = gas.rowToHistoryEntry(row, 7);
+  assert.equal(e.rowNum, 7);
+});
+
+// Like makeSheet but seeds one existing data row (sheet row `atRow`) with the
+// given clientId in column AN (40), so update-path tests can assert the
+// existing clientId is preserved. getLastDataRow scans column A (DATE).
+function makeSheetWithRow(atRow, clientId) {
+  const writes = [];
+  const maxRows = 50;
+  const colA = Array.from({ length: maxRows }, () => [""]);
+  colA[atRow - 1] = ["2026-05-01"]; // DATE present so getLastDataRow finds it
+  return {
+    writes,
+    getMaxRows: () => maxRows,
+    getRange: (r, c, numR, numC) => ({
+      // Column-A scan for getLastDataRow.
+      getValues: () => {
+        if (c === 1 && numC === 1) return colA;
+        // CLIENT_ID single-column read at (atRow, 40).
+        if (c === 40 && numC === 1) {
+          const out = Array.from({ length: numR }, () => [""]);
+          out[atRow - r] = [clientId];
+          return out;
+        }
+        return Array.from({ length: numR }, () => new Array(numC).fill(""));
+      },
+      setValues: (vals) => { writes.push({ row: r, vals: vals[0] }); },
+      setNumberFormat: () => {},
+    }),
+  };
+}
+
+test("doPost update: writes to the given rowNum, not appending", () => {
+  const sheet = makeSheetWithRow(5, "existing-cid");
+  const gas = loadGas({ properties: { PASSWORD_HASH: "h" }, sheet });
+  const payload = Object.assign({ key: "h", action: "update", rowNum: 5,
+    clientId: "new-cid-ignored" }, COMPLETE);
+  const body = JSON.parse(gas.doPost({ postData: { contents: JSON.stringify(payload) } })._s);
+  assert.equal(body.success, true);
+  assert.equal(body.updated, true);
+  assert.equal(body.row, 5);
+  assert.equal(sheet.writes.length, 1);
+  assert.equal(sheet.writes[0].row, 5);
+});
+
+test("doPost update: preserves the existing clientId at column AN", () => {
+  const sheet = makeSheetWithRow(5, "existing-cid");
+  const gas = loadGas({ properties: { PASSWORD_HASH: "h" }, sheet });
+  const payload = Object.assign({ key: "h", action: "update", rowNum: 5,
+    clientId: "new-cid-ignored" }, COMPLETE);
+  gas.doPost({ postData: { contents: JSON.stringify(payload) } });
+  assert.equal(sheet.writes[0].vals[39], "existing-cid"); // AN = index 39
+});
+
+test("doPost update: rejects an incomplete payload, writes nothing", () => {
+  const sheet = makeSheetWithRow(5, "existing-cid");
+  const gas = loadGas({ properties: { PASSWORD_HASH: "h" }, sheet });
+  const payload = { key: "h", action: "update", rowNum: 5, date: "2026-05-04", script: "TB" };
+  const body = JSON.parse(gas.doPost({ postData: { contents: JSON.stringify(payload) } })._s);
+  assert.match(body.error, /Missing required fields/);
+  assert.equal(sheet.writes.length, 0);
+});
+
+test("doPost update: rejects rowNum past the last data row", () => {
+  const sheet = makeSheetWithRow(5, "existing-cid"); // lastDataRow = 5
+  const gas = loadGas({ properties: { PASSWORD_HASH: "h" }, sheet });
+  const payload = Object.assign({ key: "h", action: "update", rowNum: 99 }, COMPLETE);
+  const body = JSON.parse(gas.doPost({ postData: { contents: JSON.stringify(payload) } })._s);
+  assert.match(body.error, /out of range/i);
+  assert.equal(sheet.writes.length, 0);
+});
+
+test("doPost update: rejects rowNum below the data start (row 2)", () => {
+  const sheet = makeSheetWithRow(5, "existing-cid");
+  const gas = loadGas({ properties: { PASSWORD_HASH: "h" }, sheet });
+  const payload = Object.assign({ key: "h", action: "update", rowNum: 2 }, COMPLETE);
+  const body = JSON.parse(gas.doPost({ postData: { contents: JSON.stringify(payload) } })._s);
+  assert.match(body.error, /out of range/i);
+  assert.equal(sheet.writes.length, 0);
+});
+
+test("doPost update: rejects a non-numeric rowNum", () => {
+  const sheet = makeSheetWithRow(5, "existing-cid");
+  const gas = loadGas({ properties: { PASSWORD_HASH: "h" }, sheet });
+  const payload = Object.assign({ key: "h", action: "update", rowNum: "banana" }, COMPLETE);
+  const body = JSON.parse(gas.doPost({ postData: { contents: JSON.stringify(payload) } })._s);
+  assert.match(body.error, /out of range/i);
+  assert.equal(sheet.writes.length, 0);
+});
+
+test("doPost update: preserves an empty clientId on a legacy row (AN blank)", () => {
+  const sheet = makeSheetWithRow(5, "");
+  const gas = loadGas({ properties: { PASSWORD_HASH: "h" }, sheet });
+  const payload = Object.assign({ key: "h", action: "update", rowNum: 5,
+    clientId: "new-cid-ignored" }, COMPLETE);
+  gas.doPost({ postData: { contents: JSON.stringify(payload) } });
+  assert.equal(sheet.writes[0].vals[39], ""); // AN stays blank, payload UUID ignored
+});

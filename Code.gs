@@ -95,14 +95,15 @@ function doGet(e) {
         return jsonResponse({ rows: [], total: 0, hasMore: false });
       }
       const all = sheet.getRange(3, 1, lastDataRow - 2, NUM_COLS).getValues()
-        .filter(r => r[COL.DATE - 1] !== "" && r[COL.DATE - 1] !== null);
+        .map((r, i) => ({ r: r, rowNum: i + 3 }))
+        .filter(o => o.r[COL.DATE - 1] !== "" && o.r[COL.DATE - 1] !== null);
       const total  = all.length;
       const rawLimit = parseInt(e.parameter.limit);
       const limit    = Math.min(Math.max(isNaN(rawLimit) ? 10 : rawLimit, 1), 50);
       const offset = Math.max(parseInt(e.parameter.offset) || 0, 0);
       const slice  = all.slice().reverse().slice(offset, offset + limit);
       return jsonResponse({
-        rows:    slice.map(rowToHistoryEntry),
+        rows:    slice.map(o => rowToHistoryEntry(o.r, o.rowNum)),
         total:   total,
         hasMore: offset + limit < total,
       });
@@ -178,6 +179,27 @@ function doPost(e) {
       return jsonResponse({ error: "Missing required fields: " + missing.join(", ") });
     }
 
+    // Update path: rewrite an existing row in place. The client sends the sheet
+    // row number (from history) and a complete payload. We preserve the row's
+    // existing clientId (col AN) so its identity is stable; the payload's fresh
+    // UUID is ignored. Online-only on the client — no queue/dedup involvement.
+    if (body.action === "update") {
+      const rowNum = parseInt(body.rowNum);
+      const lastDataRow = getLastDataRow(sheet, COL.DATE);
+      if (isNaN(rowNum) || rowNum < 3 || rowNum > lastDataRow) {
+        return jsonResponse({ error: "Row out of range" });
+      }
+      const existingId = String(
+        sheet.getRange(rowNum, COL.CLIENT_ID, 1, 1).getValues()[0][0] || ""
+      ).trim();
+      const updRow = buildRowFromBody(body, existingId);
+      sheet.getRange(rowNum, 1, 1, NUM_COLS).setValues([updRow]);
+      if (body.date) {
+        sheet.getRange(rowNum, COL.DATE).setNumberFormat("d MMM yyyy");
+      }
+      return jsonResponse({ success: true, row: rowNum, updated: true });
+    }
+
     // Idempotency: if the client supplies a clientId (UUID), check whether this
     // exact request was already written. This prevents duplicate rows when the
     // network delivers the POST but CORS or a redirect blocks the client from
@@ -191,49 +213,8 @@ function doPost(e) {
       }
     }
 
-    // Build the row array matching columns A–AN
-    const row = new Array(NUM_COLS).fill("");
-
-    row[COL.DATE - 1]           = body.date || "";
-    row[COL.EVENT - 1]          = body.event || "";
-    row[COL.LOCATION - 1]       = body.location || "";
-    row[COL.LIVE_ONLINE - 1]    = body.liveOnline || "";
-    row[COL.SCRIPT - 1]         = body.script || "";
-    row[COL.STORYTELLER - 1]    = body.storyteller || "";
-    row[COL.NUM_PLAYERS - 1]    = body.numPlayers ? parseInt(body.numPlayers) : "";
-    row[COL.STARTING_ROLE - 1]  = body.startingRole || "";
-    row[COL.STARTING_TEAM - 1]  = body.startingTeam || "";
-    row[COL.MID_GAME_ROLE - 1]  = body.midGameRole || "";
-    row[COL.MID_GAME_TEAM - 1]  = body.midGameTeam || "";
-    row[COL.ENDING_ROLE - 1]    = body.endingRole || "";
-    row[COL.ENDING_TEAM - 1]    = body.endingTeam || "";
-    row[COL.ROLE_NOTES - 1]     = body.roleNotes || "";
-    row[COL.LIVED_DIED_NOTES - 1] = body.livedDiedNotes || "";
-    row[COL.START_DEMON - 1]    = body.startDemon || "";
-    row[COL.END_DEMON - 1]      = body.endDemon || "";
-    row[COL.WINNING_TEAM - 1]   = body.winningTeam || "";
-    row[COL.WIN_LOSS - 1]       = body.winLoss || "";
-    row[COL.LAST_NIGHT - 1]     = body.lastNight || "";
-    row[COL.FABLED_1 - 1]       = body.fabled1 || "";
-    row[COL.FABLED_2 - 1]       = body.fabled2 || "";
-    row[COL.FABLED_3 - 1]       = body.fabled3 || "";
-    row[COL.FABLED_NOTES - 1]   = body.fabledNotes || "";
-    row[COL.LORIC_1 - 1]        = body.loric1 || "";
-    row[COL.LORIC_2 - 1]        = body.loric2 || "";
-    row[COL.LORIC_NOTES - 1]     = body.loricNotes || "";
-    row[COL.TRAVELLER_1 - 1]      = body.traveller1 || "";
-    row[COL.TRAVELLER_1_GE - 1]   = body.traveller1GE || "";
-    row[COL.TRAVELLER_2 - 1]      = body.traveller2 || "";
-    row[COL.TRAVELLER_2_GE - 1]   = body.traveller2GE || "";
-    row[COL.TRAVELLER_3 - 1]      = body.traveller3 || "";
-    row[COL.TRAVELLER_3_GE - 1]   = body.traveller3GE || "";
-    row[COL.TRAVELLER_NOTES - 1]  = body.travellerNotes || "";
-    row[COL.SPECIAL_WIN_TYPE - 1] = body.specialWinType || "";
-    row[COL.WIZARD_GAME - 1]      = body.wizardGame || "";
-    row[COL.WISH_NOTES - 1]       = body.wishNotes || "";
-    row[COL.WIN_LOSS_NOTES - 1]   = body.winLossNotes || "";
-    row[COL.OVERALL_GAME_NOTES - 1] = body.overallGameNotes || "";
-    row[COL.CLIENT_ID - 1]       = clientId; // store idempotency key (col AN)
+    // Build the row array matching columns A–AN (shared with the update path).
+    const row = buildRowFromBody(body, clientId);
 
     // `appendRow` / `getLastRow` count rows that only have data-validation or
     // formatting, so on this sheet they land ~1000 rows below the real data.
@@ -319,7 +300,54 @@ function findRowByClientId(sheet, clientId, lastDataRow) {
   return 0;
 }
 
-function rowToHistoryEntry(row) {
+// Builds the A–AN row array from a POST body. Shared by the append and update
+// paths in doPost so column mapping lives in exactly one place.
+function buildRowFromBody(body, clientId) {
+  const row = new Array(NUM_COLS).fill("");
+  row[COL.DATE - 1]           = body.date || "";
+  row[COL.EVENT - 1]          = body.event || "";
+  row[COL.LOCATION - 1]       = body.location || "";
+  row[COL.LIVE_ONLINE - 1]    = body.liveOnline || "";
+  row[COL.SCRIPT - 1]         = body.script || "";
+  row[COL.STORYTELLER - 1]    = body.storyteller || "";
+  row[COL.NUM_PLAYERS - 1]    = body.numPlayers ? parseInt(body.numPlayers) : "";
+  row[COL.STARTING_ROLE - 1]  = body.startingRole || "";
+  row[COL.STARTING_TEAM - 1]  = body.startingTeam || "";
+  row[COL.MID_GAME_ROLE - 1]  = body.midGameRole || "";
+  row[COL.MID_GAME_TEAM - 1]  = body.midGameTeam || "";
+  row[COL.ENDING_ROLE - 1]    = body.endingRole || "";
+  row[COL.ENDING_TEAM - 1]    = body.endingTeam || "";
+  row[COL.ROLE_NOTES - 1]     = body.roleNotes || "";
+  row[COL.LIVED_DIED_NOTES - 1] = body.livedDiedNotes || "";
+  row[COL.START_DEMON - 1]    = body.startDemon || "";
+  row[COL.END_DEMON - 1]      = body.endDemon || "";
+  row[COL.WINNING_TEAM - 1]   = body.winningTeam || "";
+  row[COL.WIN_LOSS - 1]       = body.winLoss || "";
+  row[COL.LAST_NIGHT - 1]     = body.lastNight || "";
+  row[COL.FABLED_1 - 1]       = body.fabled1 || "";
+  row[COL.FABLED_2 - 1]       = body.fabled2 || "";
+  row[COL.FABLED_3 - 1]       = body.fabled3 || "";
+  row[COL.FABLED_NOTES - 1]   = body.fabledNotes || "";
+  row[COL.LORIC_1 - 1]        = body.loric1 || "";
+  row[COL.LORIC_2 - 1]        = body.loric2 || "";
+  row[COL.LORIC_NOTES - 1]     = body.loricNotes || "";
+  row[COL.TRAVELLER_1 - 1]      = body.traveller1 || "";
+  row[COL.TRAVELLER_1_GE - 1]   = body.traveller1GE || "";
+  row[COL.TRAVELLER_2 - 1]      = body.traveller2 || "";
+  row[COL.TRAVELLER_2_GE - 1]   = body.traveller2GE || "";
+  row[COL.TRAVELLER_3 - 1]      = body.traveller3 || "";
+  row[COL.TRAVELLER_3_GE - 1]   = body.traveller3GE || "";
+  row[COL.TRAVELLER_NOTES - 1]  = body.travellerNotes || "";
+  row[COL.SPECIAL_WIN_TYPE - 1] = body.specialWinType || "";
+  row[COL.WIZARD_GAME - 1]      = body.wizardGame || "";
+  row[COL.WISH_NOTES - 1]       = body.wishNotes || "";
+  row[COL.WIN_LOSS_NOTES - 1]   = body.winLossNotes || "";
+  row[COL.OVERALL_GAME_NOTES - 1] = body.overallGameNotes || "";
+  row[COL.CLIENT_ID - 1]       = clientId;
+  return row;
+}
+
+function rowToHistoryEntry(row, rowNum) {
   const dateVal = row[COL.DATE - 1];
   let dateStr = "";
   if (dateVal instanceof Date && !isNaN(dateVal)) {
@@ -328,6 +356,7 @@ function rowToHistoryEntry(row) {
     dateStr = String(dateVal);
   }
   return {
+    rowNum:         rowNum || 0,
     date:           dateStr,
     script:         String(row[COL.SCRIPT - 1]          || ""),
     startingRole:   String(row[COL.STARTING_ROLE - 1]   || ""),

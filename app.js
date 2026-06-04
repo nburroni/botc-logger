@@ -44,7 +44,7 @@ const ALL_LORICS = [
 // ——— CONFIG ———
 // Bump alongside CACHE_VERSION in sw.js on every release so the Diagnostics
 // panel shows which build is running and the user can confirm a force-update.
-const APP_VERSION = "v8 (2026-05-31)";
+const APP_VERSION = "v9 (2026-06-03)";
 const STORAGE_KEY = "botc_logger_endpoint";
 const AUTH_KEY = "botc_logger_auth";
 const GAME_INFO_KEY = "botc_logger_game_info";
@@ -232,14 +232,17 @@ function getFailed()  { return queueRead(QUEUE_FAILED_KEY); }
 // even though the row was already written. We use navigator.onLine to separate
 // "CORS blocked but server got the request" (provisional success) from "true
 // network failure" (keep in pending). See the catch block below for details.
-async function queueAttempt(payload) {
+
+// Raw POST of a payload to the Apps Script endpoint. Returns a result object:
+//   { ok: true, row }                       // JSON success
+//   { ok: true, provisional: true, row: null } // CORS-masked or non-JSON reply
+//   { ok: false, authError: true, err }
+//   { ok: false, userError: true, err }
+//   { ok: false, networkError: true, err }  // offline / request never left
+// Shared by queueAttempt (new-game queue) and the edit/update flow.
+async function postPayload(payload) {
   const cid    = payload && payload.clientId;
   const script = payload && payload.script;
-  // Log the exact game data being POSTed (key redacted). This runs on direct
-  // submits AND every queue retry, so the log shows precisely which fields left
-  // the device — the evidence needed to tell a form/autofill bug from a
-  // server-side write bug.
-  dlog("post:sending", redactPayload(payload));
   let resp;
   try {
     resp = await fetch(ENDPOINT, {
@@ -294,6 +297,14 @@ async function queueAttempt(payload) {
     dlog("attempt:provisional_parse", { clientId: cid, script });
     return { ok: true, provisional: true, row: null };
   }
+}
+
+async function queueAttempt(payload) {
+  // Log the exact game data being POSTed (key redacted). This runs on direct
+  // submits AND every queue retry, so the log shows precisely which fields left
+  // the device.
+  dlog("post:sending", redactPayload(payload));
+  return postPayload(payload);
 }
 
 // Public API: try once if online; enqueue otherwise.
@@ -1143,7 +1154,92 @@ function toggleSection(name) {
     toggle.textContent = show ? "\u2212 Hide mid-game role change" : "+ Role changed mid-game";
   } else if (name === "fabled") {
     toggle.textContent = show ? "\u2212 Hide Fabled / Loric" : "+ Add Fabled / Loric characters";
+  } else if (name === "travellers") {
+    toggle.textContent = show ? "\u2212 Hide travellers" : "+ Add travellers";
   }
+}
+
+// ——— EDIT MODE ———
+// null = logging a new game; otherwise { rowNum } of the sheet row being edited.
+let EDITING = null;
+
+// Text/select inputs whose ids match history-row keys 1:1.
+const EDIT_TEXT_FIELDS = [
+  "date","event","location","liveOnline","script","storyteller","numPlayers",
+  "startingRole","midGameRole","endingRole","roleNotes","livedDiedNotes",
+  "startDemon","endDemon","lastNight","specialWinType",
+  "fabled1","fabled2","fabled3","fabledNotes","loric1","loric2","loricNotes",
+  "traveller1","traveller2","traveller3","travellerNotes",
+  "wizardGame","wishNotes","winLossNotes","overallGameNotes",
+];
+// Hidden chip-backed inputs (Good/Evil + W/L). Value is set + matching chip highlighted.
+const EDIT_CHIP_FIELDS = [
+  "startingTeam","midGameTeam","endingTeam","winningTeam","winLoss",
+  "traveller1GE","traveller2GE","traveller3GE",
+];
+
+// Fills the form from a history row object.
+function populateForm(row) {
+  EDIT_TEXT_FIELDS.forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.value = row[id] != null ? row[id] : "";
+  });
+  EDIT_CHIP_FIELDS.forEach(id => {
+    const val = row[id] != null ? String(row[id]) : "";
+    const hidden = document.getElementById(id);
+    if (hidden) hidden.value = val;
+    document.querySelectorAll(`.chip[data-field="${id}"]`).forEach(c => {
+      c.classList.toggle("selected", c.dataset.value === val && val !== "");
+    });
+  });
+  setSectionOpen("midGame", !!(row.midGameRole || row.endingRole));
+  setSectionOpen("fabled", !!(row.fabled1 || row.fabled2 || row.fabled3 ||
+    row.fabledNotes || row.loric1 || row.loric2 || row.loricNotes));
+  setSectionOpen("travellers", !!(row.traveller1 || row.traveller2 ||
+    row.traveller3 || row.travellerNotes));
+}
+
+// Force a collapsible section open or closed (mirrors toggleSection's effect).
+function setSectionOpen(name, open) {
+  const content = document.getElementById(name + "Content");
+  const toggle = document.getElementById(name + "Toggle");
+  if (!content || !toggle) return;
+  content.classList.toggle("show", open);
+  if (name === "midGame") {
+    toggle.textContent = open ? "− Hide mid-game role change" : "+ Role changed mid-game";
+  } else if (name === "fabled") {
+    toggle.textContent = open ? "− Hide Fabled / Loric" : "+ Add Fabled / Loric characters";
+  } else if (name === "travellers") {
+    toggle.textContent = open ? "− Hide travellers" : "+ Add travellers";
+  }
+}
+
+// Enters edit mode for the recent game at `index` in _recentRows.
+function editGame(index) {
+  const row = _recentRows[index];
+  if (!row || !row.rowNum) return;
+  closeGameDetail();
+  switchTab("log");
+  populateForm(row);
+  EDITING = { rowNum: row.rowNum };
+  const banner = document.getElementById("editBanner");
+  document.getElementById("editBannerText").textContent =
+    "Editing game from " + (row.date || "?") + (row.script ? " · " + row.script : "");
+  banner.classList.remove("hidden");
+  document.querySelector("#submitBtn .btn-text").textContent = "Update game";
+  window.scrollTo({ top: 0, behavior: "smooth" });
+}
+
+// Leaves edit mode and restores the form to new-game logging.
+function cancelEdit() {
+  EDITING = null;
+  document.getElementById("editBanner").classList.add("hidden");
+  document.querySelector("#submitBtn .btn-text").textContent = "Log Game";
+  resetFormForNextGame();
+  // resetFormForNextGame intentionally keeps GAME INFO fields for back-to-back
+  // logging, but an edited game's date may be old — re-default it to today so
+  // the next new game doesn't silently inherit a stale date.
+  document.getElementById("date").valueAsDate = new Date();
 }
 
 // ——— SUBMIT ———
@@ -1205,6 +1301,40 @@ async function submitGame(e) {
   };
 
   try {
+    if (EDITING) {
+      // Online-only update — never queued. A stale queued edit could overwrite
+      // newer data or target a shifted row.
+      if (!navigator.onLine) {
+        showToast("Can't edit while offline", "error");
+        return;
+      }
+      const updatePayload = Object.assign({}, payload, {
+        action: "update", rowNum: EDITING.rowNum,
+      });
+      dlog("edit:sending", redactPayload(updatePayload));
+      const result = await postPayload(updatePayload);
+      if (result.ok) {
+        showToast(
+          result.provisional ? "Game updated — please verify in sheet"
+                             : "Game updated",
+          "success"
+        );
+        cancelEdit();             // clears EDITING, resets form, hides banner
+        // Refresh Recent so the row shows new values. loadRecentGames CONCATs
+        // onto _recentRows, so reset the accumulator first or page 0 duplicates.
+        _recentRows = [];
+        _recentOffset = 0;
+        loadRecentGames(0);
+        loadOptions();
+      } else if (result.authError) {
+        clearSession("Wrong password — please re-enter");
+      } else {
+        // networkError or userError — keep edit mode active so the user retries.
+        showToast("Update failed: " + (result.err || "unknown"), "error");
+      }
+      return;
+    }
+
     const result = await submitViaQueue(payload);
 
     if (result.synced) {
@@ -1685,6 +1815,7 @@ function openGameDetail(index) {
           `<span class="detail-result ${isWin ? "win" : "loss"}">${isWin ? "WIN" : "LOSS"}</span>` +
         `</div>` +
       `</div>` +
+      (row.rowNum ? `<button type="button" class="detail-edit-btn" onclick="editGame(${index})">Edit game</button>` : "") +
       (subParts ? `<div class="detail-sub">${subParts}</div>` : "") +
     `</div>` +
     `<div class="detail-card"><div class="detail-card-h">Your role</div>${roleBlock}</div>` +
