@@ -192,49 +192,8 @@ function doPost(e) {
       }
     }
 
-    // Build the row array matching columns A–AN
-    const row = new Array(NUM_COLS).fill("");
-
-    row[COL.DATE - 1]           = body.date || "";
-    row[COL.EVENT - 1]          = body.event || "";
-    row[COL.LOCATION - 1]       = body.location || "";
-    row[COL.LIVE_ONLINE - 1]    = body.liveOnline || "";
-    row[COL.SCRIPT - 1]         = body.script || "";
-    row[COL.STORYTELLER - 1]    = body.storyteller || "";
-    row[COL.NUM_PLAYERS - 1]    = body.numPlayers ? parseInt(body.numPlayers) : "";
-    row[COL.STARTING_ROLE - 1]  = body.startingRole || "";
-    row[COL.STARTING_TEAM - 1]  = body.startingTeam || "";
-    row[COL.MID_GAME_ROLE - 1]  = body.midGameRole || "";
-    row[COL.MID_GAME_TEAM - 1]  = body.midGameTeam || "";
-    row[COL.ENDING_ROLE - 1]    = body.endingRole || "";
-    row[COL.ENDING_TEAM - 1]    = body.endingTeam || "";
-    row[COL.ROLE_NOTES - 1]     = body.roleNotes || "";
-    row[COL.LIVED_DIED_NOTES - 1] = body.livedDiedNotes || "";
-    row[COL.START_DEMON - 1]    = body.startDemon || "";
-    row[COL.END_DEMON - 1]      = body.endDemon || "";
-    row[COL.WINNING_TEAM - 1]   = body.winningTeam || "";
-    row[COL.WIN_LOSS - 1]       = body.winLoss || "";
-    row[COL.LAST_NIGHT - 1]     = body.lastNight || "";
-    row[COL.FABLED_1 - 1]       = body.fabled1 || "";
-    row[COL.FABLED_2 - 1]       = body.fabled2 || "";
-    row[COL.FABLED_3 - 1]       = body.fabled3 || "";
-    row[COL.FABLED_NOTES - 1]   = body.fabledNotes || "";
-    row[COL.LORIC_1 - 1]        = body.loric1 || "";
-    row[COL.LORIC_2 - 1]        = body.loric2 || "";
-    row[COL.LORIC_NOTES - 1]     = body.loricNotes || "";
-    row[COL.TRAVELLER_1 - 1]      = body.traveller1 || "";
-    row[COL.TRAVELLER_1_GE - 1]   = body.traveller1GE || "";
-    row[COL.TRAVELLER_2 - 1]      = body.traveller2 || "";
-    row[COL.TRAVELLER_2_GE - 1]   = body.traveller2GE || "";
-    row[COL.TRAVELLER_3 - 1]      = body.traveller3 || "";
-    row[COL.TRAVELLER_3_GE - 1]   = body.traveller3GE || "";
-    row[COL.TRAVELLER_NOTES - 1]  = body.travellerNotes || "";
-    row[COL.SPECIAL_WIN_TYPE - 1] = body.specialWinType || "";
-    row[COL.WIZARD_GAME - 1]      = body.wizardGame || "";
-    row[COL.WISH_NOTES - 1]       = body.wishNotes || "";
-    row[COL.WIN_LOSS_NOTES - 1]   = body.winLossNotes || "";
-    row[COL.OVERALL_GAME_NOTES - 1] = body.overallGameNotes || "";
-    row[COL.CLIENT_ID - 1]       = clientId; // store idempotency key (col AN)
+    // Build the row array matching columns A–AN (shared with the update path).
+    const row = buildRowFromBody(body, clientId);
 
     // `appendRow` / `getLastRow` count rows that only have data-validation or
     // formatting, so on this sheet they land ~1000 rows below the real data.
@@ -318,6 +277,53 @@ function findRowByClientId(sheet, clientId, lastDataRow) {
     if (String(vals[i][0]).trim() === clientId) return i + 3; // convert to 1-indexed sheet row
   }
   return 0;
+}
+
+// Builds the A–AN row array from a POST body. Shared by the append and update
+// paths in doPost so column mapping lives in exactly one place.
+function buildRowFromBody(body, clientId) {
+  const row = new Array(NUM_COLS).fill("");
+  row[COL.DATE - 1]           = body.date || "";
+  row[COL.EVENT - 1]          = body.event || "";
+  row[COL.LOCATION - 1]       = body.location || "";
+  row[COL.LIVE_ONLINE - 1]    = body.liveOnline || "";
+  row[COL.SCRIPT - 1]         = body.script || "";
+  row[COL.STORYTELLER - 1]    = body.storyteller || "";
+  row[COL.NUM_PLAYERS - 1]    = body.numPlayers ? parseInt(body.numPlayers) : "";
+  row[COL.STARTING_ROLE - 1]  = body.startingRole || "";
+  row[COL.STARTING_TEAM - 1]  = body.startingTeam || "";
+  row[COL.MID_GAME_ROLE - 1]  = body.midGameRole || "";
+  row[COL.MID_GAME_TEAM - 1]  = body.midGameTeam || "";
+  row[COL.ENDING_ROLE - 1]    = body.endingRole || "";
+  row[COL.ENDING_TEAM - 1]    = body.endingTeam || "";
+  row[COL.ROLE_NOTES - 1]     = body.roleNotes || "";
+  row[COL.LIVED_DIED_NOTES - 1] = body.livedDiedNotes || "";
+  row[COL.START_DEMON - 1]    = body.startDemon || "";
+  row[COL.END_DEMON - 1]      = body.endDemon || "";
+  row[COL.WINNING_TEAM - 1]   = body.winningTeam || "";
+  row[COL.WIN_LOSS - 1]       = body.winLoss || "";
+  row[COL.LAST_NIGHT - 1]     = body.lastNight || "";
+  row[COL.FABLED_1 - 1]       = body.fabled1 || "";
+  row[COL.FABLED_2 - 1]       = body.fabled2 || "";
+  row[COL.FABLED_3 - 1]       = body.fabled3 || "";
+  row[COL.FABLED_NOTES - 1]   = body.fabledNotes || "";
+  row[COL.LORIC_1 - 1]        = body.loric1 || "";
+  row[COL.LORIC_2 - 1]        = body.loric2 || "";
+  row[COL.LORIC_NOTES - 1]     = body.loricNotes || "";
+  row[COL.TRAVELLER_1 - 1]      = body.traveller1 || "";
+  row[COL.TRAVELLER_1_GE - 1]   = body.traveller1GE || "";
+  row[COL.TRAVELLER_2 - 1]      = body.traveller2 || "";
+  row[COL.TRAVELLER_2_GE - 1]   = body.traveller2GE || "";
+  row[COL.TRAVELLER_3 - 1]      = body.traveller3 || "";
+  row[COL.TRAVELLER_3_GE - 1]   = body.traveller3GE || "";
+  row[COL.TRAVELLER_NOTES - 1]  = body.travellerNotes || "";
+  row[COL.SPECIAL_WIN_TYPE - 1] = body.specialWinType || "";
+  row[COL.WIZARD_GAME - 1]      = body.wizardGame || "";
+  row[COL.WISH_NOTES - 1]       = body.wishNotes || "";
+  row[COL.WIN_LOSS_NOTES - 1]   = body.winLossNotes || "";
+  row[COL.OVERALL_GAME_NOTES - 1] = body.overallGameNotes || "";
+  row[COL.CLIENT_ID - 1]       = clientId;
+  return row;
 }
 
 function rowToHistoryEntry(row, rowNum) {
