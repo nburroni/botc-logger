@@ -232,14 +232,17 @@ function getFailed()  { return queueRead(QUEUE_FAILED_KEY); }
 // even though the row was already written. We use navigator.onLine to separate
 // "CORS blocked but server got the request" (provisional success) from "true
 // network failure" (keep in pending). See the catch block below for details.
-async function queueAttempt(payload) {
+
+// Raw POST of a payload to the Apps Script endpoint. Returns a result object:
+//   { ok: true, row }                       // JSON success
+//   { ok: true, provisional: true, row: null } // CORS-masked or non-JSON reply
+//   { ok: false, authError: true, err }
+//   { ok: false, userError: true, err }
+//   { ok: false, networkError: true, err }  // offline / request never left
+// Shared by queueAttempt (new-game queue) and the edit/update flow.
+async function postPayload(payload) {
   const cid    = payload && payload.clientId;
   const script = payload && payload.script;
-  // Log the exact game data being POSTed (key redacted). This runs on direct
-  // submits AND every queue retry, so the log shows precisely which fields left
-  // the device — the evidence needed to tell a form/autofill bug from a
-  // server-side write bug.
-  dlog("post:sending", redactPayload(payload));
   let resp;
   try {
     resp = await fetch(ENDPOINT, {
@@ -294,6 +297,14 @@ async function queueAttempt(payload) {
     dlog("attempt:provisional_parse", { clientId: cid, script });
     return { ok: true, provisional: true, row: null };
   }
+}
+
+async function queueAttempt(payload) {
+  // Log the exact game data being POSTed (key redacted). This runs on direct
+  // submits AND every queue retry, so the log shows precisely which fields left
+  // the device.
+  dlog("post:sending", redactPayload(payload));
+  return postPayload(payload);
 }
 
 // Public API: try once if online; enqueue otherwise.
