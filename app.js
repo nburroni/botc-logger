@@ -1236,6 +1236,10 @@ function cancelEdit() {
   document.getElementById("editBanner").classList.add("hidden");
   document.querySelector("#submitBtn .btn-text").textContent = "Log Game";
   resetFormForNextGame();
+  // resetFormForNextGame intentionally keeps GAME INFO fields for back-to-back
+  // logging, but an edited game's date may be old — re-default it to today so
+  // the next new game doesn't silently inherit a stale date.
+  document.getElementById("date").valueAsDate = new Date();
 }
 
 // ——— SUBMIT ———
