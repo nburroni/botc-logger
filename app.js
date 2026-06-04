@@ -1777,6 +1777,7 @@ function openGameDetail(index) {
           `<span class="detail-result ${isWin ? "win" : "loss"}">${isWin ? "WIN" : "LOSS"}</span>` +
         `</div>` +
       `</div>` +
+      (row.rowNum ? `<button type="button" class="detail-edit-btn" onclick="editGame(${index})">Edit game</button>` : "") +
       (subParts ? `<div class="detail-sub">${subParts}</div>` : "") +
     `</div>` +
     `<div class="detail-card"><div class="detail-card-h">Your role</div>${roleBlock}</div>` +
