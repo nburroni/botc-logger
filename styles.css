@@ -88,6 +88,22 @@ body {
 
 /* FORM */
 .form-container { max-width: 480px; margin: 0 auto; padding: 16px; }
+
+/* EDIT MODE BANNER */
+.edit-banner {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px; margin-bottom: 12px; padding: 10px 14px;
+  background: var(--accent-glow); border: 1px solid var(--accent);
+  border-radius: var(--radius-sm); font-size: 13px; color: var(--text);
+}
+.edit-banner.hidden { display: none; }
+.edit-cancel {
+  background: none; border: 1px solid var(--accent); color: var(--accent);
+  border-radius: var(--radius-sm); padding: 6px 12px; font-size: 12px;
+  font-weight: 600; cursor: pointer;
+}
+.edit-cancel:hover { background: var(--accent); color: #fff; }
+
 .section {
   background: var(--surface); border: 1px solid var(--border);
   border-radius: var(--radius); padding: 16px; margin-bottom: 12px;

@@ -50,6 +50,10 @@
 <!-- FORM -->
 <div class="form-container">
   <form id="gameForm" onsubmit="submitGame(event)">
+    <div class="edit-banner hidden" id="editBanner">
+      <span id="editBannerText">Editing game</span>
+      <button type="button" class="edit-cancel" onclick="cancelEdit()">Cancel</button>
+    </div>
     <div class="form-cols">
     <div class="form-col">
     <!-- GAME INFO -->

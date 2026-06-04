@@ -1154,7 +1154,88 @@ function toggleSection(name) {
     toggle.textContent = show ? "\u2212 Hide mid-game role change" : "+ Role changed mid-game";
   } else if (name === "fabled") {
     toggle.textContent = show ? "\u2212 Hide Fabled / Loric" : "+ Add Fabled / Loric characters";
+  } else if (name === "travellers") {
+    toggle.textContent = show ? "\u2212 Hide travellers" : "+ Add travellers";
   }
+}
+
+// ——— EDIT MODE ———
+// null = logging a new game; otherwise { rowNum } of the sheet row being edited.
+let EDITING = null;
+
+// Text/select inputs whose ids match history-row keys 1:1.
+const EDIT_TEXT_FIELDS = [
+  "date","event","location","liveOnline","script","storyteller","numPlayers",
+  "startingRole","midGameRole","endingRole","roleNotes","livedDiedNotes",
+  "startDemon","endDemon","lastNight","specialWinType",
+  "fabled1","fabled2","fabled3","fabledNotes","loric1","loric2","loricNotes",
+  "traveller1","traveller2","traveller3","travellerNotes",
+  "wizardGame","wishNotes","winLossNotes","overallGameNotes",
+];
+// Hidden chip-backed inputs (Good/Evil + W/L). Value is set + matching chip highlighted.
+const EDIT_CHIP_FIELDS = [
+  "startingTeam","midGameTeam","endingTeam","winningTeam","winLoss",
+  "traveller1GE","traveller2GE","traveller3GE",
+];
+
+// Fills the form from a history row object.
+function populateForm(row) {
+  EDIT_TEXT_FIELDS.forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.value = row[id] != null ? row[id] : "";
+  });
+  EDIT_CHIP_FIELDS.forEach(id => {
+    const val = row[id] != null ? String(row[id]) : "";
+    const hidden = document.getElementById(id);
+    if (hidden) hidden.value = val;
+    document.querySelectorAll(`.chip[data-field="${id}"]`).forEach(c => {
+      c.classList.toggle("selected", c.dataset.value === val && val !== "");
+    });
+  });
+  setSectionOpen("midGame", !!(row.midGameRole || row.endingRole));
+  setSectionOpen("fabled", !!(row.fabled1 || row.fabled2 || row.fabled3 ||
+    row.fabledNotes || row.loric1 || row.loric2 || row.loricNotes));
+  setSectionOpen("travellers", !!(row.traveller1 || row.traveller2 ||
+    row.traveller3 || row.travellerNotes));
+}
+
+// Force a collapsible section open or closed (mirrors toggleSection's effect).
+function setSectionOpen(name, open) {
+  const content = document.getElementById(name + "Content");
+  const toggle = document.getElementById(name + "Toggle");
+  if (!content || !toggle) return;
+  content.classList.toggle("show", open);
+  if (name === "midGame") {
+    toggle.textContent = open ? "− Hide mid-game role change" : "+ Role changed mid-game";
+  } else if (name === "fabled") {
+    toggle.textContent = open ? "− Hide Fabled / Loric" : "+ Add Fabled / Loric characters";
+  } else if (name === "travellers") {
+    toggle.textContent = open ? "− Hide travellers" : "+ Add travellers";
+  }
+}
+
+// Enters edit mode for the recent game at `index` in _recentRows.
+function editGame(index) {
+  const row = _recentRows[index];
+  if (!row || !row.rowNum) return;
+  closeGameDetail();
+  switchTab("log");
+  populateForm(row);
+  EDITING = { rowNum: row.rowNum };
+  const banner = document.getElementById("editBanner");
+  document.getElementById("editBannerText").textContent =
+    "Editing game from " + (row.date || "?") + (row.script ? " · " + row.script : "");
+  banner.classList.remove("hidden");
+  document.querySelector("#submitBtn .btn-text").textContent = "Update game";
+  window.scrollTo({ top: 0, behavior: "smooth" });
+}
+
+// Leaves edit mode and restores the form to new-game logging.
+function cancelEdit() {
+  EDITING = null;
+  document.getElementById("editBanner").classList.add("hidden");
+  document.querySelector("#submitBtn .btn-text").textContent = "Log Game";
+  resetFormForNextGame();
 }
 
 // ——— SUBMIT ———
