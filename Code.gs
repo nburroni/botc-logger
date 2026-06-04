@@ -179,6 +179,27 @@ function doPost(e) {
       return jsonResponse({ error: "Missing required fields: " + missing.join(", ") });
     }
 
+    // Update path: rewrite an existing row in place. The client sends the sheet
+    // row number (from history) and a complete payload. We preserve the row's
+    // existing clientId (col AN) so its identity is stable; the payload's fresh
+    // UUID is ignored. Online-only on the client — no queue/dedup involvement.
+    if (body.action === "update") {
+      const rowNum = parseInt(body.rowNum);
+      const lastDataRow = getLastDataRow(sheet, COL.DATE);
+      if (isNaN(rowNum) || rowNum < 3 || rowNum > lastDataRow) {
+        return jsonResponse({ error: "Row out of range" });
+      }
+      const existingId = String(
+        sheet.getRange(rowNum, COL.CLIENT_ID, 1, 1).getValues()[0][0] || ""
+      ).trim();
+      const updRow = buildRowFromBody(body, existingId);
+      sheet.getRange(rowNum, 1, 1, NUM_COLS).setValues([updRow]);
+      if (body.date) {
+        sheet.getRange(rowNum, COL.DATE).setNumberFormat("d MMM yyyy");
+      }
+      return jsonResponse({ success: true, row: rowNum, updated: true });
+    }
+
     // Idempotency: if the client supplies a clientId (UUID), check whether this
     // exact request was already written. This prevents duplicate rows when the
     // network delivers the POST but CORS or a redirect blocks the client from
