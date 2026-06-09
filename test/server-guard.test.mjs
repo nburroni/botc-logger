@@ -269,3 +269,11 @@ test("doPost append: a validation-rejecting row still lands fully (regression)",
   assert.equal(sheet.calls.clearDataValidations, 1);
   assert.equal(sheet.calls.written[18], "W");
 });
+
+test("rowToHistoryEntry: includes clientId from column AN", () => {
+  const gas = loadGas({ properties: { PASSWORD_HASH: "h" } });
+  const row = new Array(40).fill("");
+  row[0] = "2026-06-08"; row[39] = "cid-abc"; // AN = index 39
+  const e = gas.rowToHistoryEntry(row, 5);
+  assert.equal(e.clientId, "cid-abc");
+});

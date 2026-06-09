@@ -373,6 +373,7 @@ function rowToHistoryEntry(row, rowNum) {
   }
   return {
     rowNum:         rowNum || 0,
+    clientId:       String(row[COL.CLIENT_ID - 1]       || ""),
     date:           dateStr,
     script:         String(row[COL.SCRIPT - 1]          || ""),
     startingRole:   String(row[COL.STARTING_ROLE - 1]   || ""),
