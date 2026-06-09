@@ -203,3 +203,69 @@ test("doPost update: preserves an empty clientId on a legacy row (AN blank)", ()
   gas.doPost({ postData: { contents: JSON.stringify(payload) } });
   assert.equal(sheet.writes[0].vals[39], ""); // AN stays blank, payload UUID ignored
 });
+
+// Stub whose setValues throws a validation-style error on first call, then
+// succeeds. Records clearDataValidations calls. Mirrors Apps Script's behaviour
+// when a cell's data-validation rejects a written value.
+function makeValidationStub(atRow) {
+  const calls = { setValues: 0, clearDataValidations: 0, written: null };
+  const maxRows = 50;
+  const colA = Array.from({ length: maxRows }, () => [""]);
+  colA[atRow - 1] = ["2026-05-01"];
+  return {
+    calls,
+    getMaxRows: () => maxRows,
+    getRange: (r, c, numR, numC) => ({
+      getValues: () => {
+        if (c === 1 && numC === 1) return colA;
+        return Array.from({ length: numR || 1 }, () => new Array(numC || 1).fill(""));
+      },
+      setValues: (vals) => {
+        calls.setValues++;
+        if (calls.setValues === 1 && (numC || 0) >= 40) {
+          throw new Error("The data you entered in cell J100 violates the data validation rules set on this cell.");
+        }
+        calls.written = vals[0];
+      },
+      clearDataValidations: () => { calls.clearDataValidations++; },
+      setNumberFormat: () => {},
+    }),
+  };
+}
+
+test("writeRow: retries after a validation rejection with validations cleared", () => {
+  const gas = loadGas({ properties: { PASSWORD_HASH: "h" } });
+  const sheet = makeValidationStub(5);
+  const row = new Array(40).fill("");
+  row[0] = "2026-06-08"; row[18] = "W";
+  gas.writeRow(sheet, 5, row);
+  assert.equal(sheet.calls.setValues, 2);
+  assert.equal(sheet.calls.clearDataValidations, 1);
+  assert.equal(sheet.calls.written[18], "W");
+});
+
+test("writeRow: no clear when the first write succeeds", () => {
+  const gas = loadGas({ properties: { PASSWORD_HASH: "h" } });
+  const writes = [];
+  const sheet = {
+    getRange: () => ({
+      setValues: (vals) => writes.push(vals[0]),
+      clearDataValidations: () => { throw new Error("should not be called"); },
+      setNumberFormat: () => {},
+    }),
+  };
+  const row = new Array(40).fill(""); row[18] = "L";
+  gas.writeRow(sheet, 7, row);
+  assert.equal(writes.length, 1);
+  assert.equal(writes[0][18], "L");
+});
+
+test("doPost append: a validation-rejecting row still lands fully (regression)", () => {
+  const sheet = makeValidationStub(4); // lastDataRow = 4, append targets row 5
+  const gas = loadGas({ properties: { PASSWORD_HASH: "h" }, sheet });
+  const payload = Object.assign({ key: "h", clientId: "cid-x" }, COMPLETE, { midGameRole: "g" });
+  const body = JSON.parse(gas.doPost({ postData: { contents: JSON.stringify(payload) } })._s);
+  assert.equal(body.success, true);
+  assert.equal(sheet.calls.clearDataValidations, 1);
+  assert.equal(sheet.calls.written[18], "W");
+});
