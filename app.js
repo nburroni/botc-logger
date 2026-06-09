@@ -307,8 +307,11 @@ async function postPayload(payload) {
 async function verifyWrite(clientId) {
   if (!clientId) return { ok: true, unverified: true };
   try {
+    // limit=25 (not just the newest row): a queue drain can flush several games
+    // around the time of a direct submit, so the target row may not be the very
+    // newest. 25 covers any realistic interactive burst without over-fetching.
     const url = ENDPOINT + "?key=" + encodeURIComponent(AUTH_HASH)
-              + "&action=history&limit=5&offset=0";
+              + "&action=history&limit=25&offset=0";
     const resp = await fetch(url, { redirect: "follow" });
     const data = await resp.json();
     const rows = (data && data.rows) || [];
