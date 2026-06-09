@@ -1203,6 +1203,11 @@ function toggleSection(name) {
 // null = logging a new game; otherwise { rowNum } of the sheet row being edited.
 let EDITING = null;
 
+// Tracks the last set of off-list fields the user was warned about (comma-joined
+// sorted ids), so a deliberate resubmit of the same unusual values isn't blocked.
+// Reset to "" whenever a clean submit passes the list check.
+let _listWarnAcked = "";
+
 // Text/select inputs whose ids match history-row keys 1:1.
 const EDIT_TEXT_FIELDS = [
   "date","event","location","liveOnline","script","storyteller","numPlayers",
@@ -1293,9 +1298,11 @@ async function submitGame(e) {
     return;
   }
 
-  // Reject values outside the known role/demon/fabled/loric lists — these would
-  // be rejected by the sheet's column data-validation and otherwise corrupt the
-  // write. Built from the same id→value reads used for the payload below.
+  // Soft-warn (don't block) on values outside the known role/demon/fabled/loric
+  // lists. The backend self-heals the write now, so off-list values DO save
+  // correctly — but an off-list value is usually a typo (e.g. a stray "g" in
+  // Mid Game Role). So we warn once and let a second submit through. Legitimate
+  // unusual entries (e.g. "No Demon (Summoner)") are never permanently blocked.
   const listVals = {
     startingRole: document.getElementById("startingRole").value.trim(),
     midGameRole:  document.getElementById("midGameRole").value.trim(),
@@ -1312,11 +1319,16 @@ async function submitGame(e) {
     traveller3:   document.getElementById("traveller3").value.trim(),
   };
   const badList = invalidListFields(listVals);
-  if (badList.length > 0) {
+  const badSig = badList.map(f => f.id).sort().join(",");
+  if (badList.length > 0 && badSig !== _listWarnAcked) {
+    // First time seeing this exact set of off-list fields — warn and wait for a
+    // second submit to confirm. Remembered so an intentional resubmit goes through.
     badList.forEach(f => markInvalid(f.id));
-    showToast("Not a valid option: " + badList.map(f => f.label).join(", "), "error");
+    _listWarnAcked = badSig;
+    showToast("Check spelling: " + badList.map(f => f.label).join(", ") + " — submit again to keep", "info");
     return;
   }
+  _listWarnAcked = "";
 
   const btn = document.getElementById("submitBtn");
   btn.classList.add("loading"); btn.disabled = true;
