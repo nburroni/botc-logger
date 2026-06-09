@@ -142,3 +142,33 @@ test("invalidListFields: flags an unknown demon", () => {
   });
   assert.equal(bad.some(f => f.id === "startDemon"), true);
 });
+
+test("verifyWrite: returns ok when the row is present and complete", async () => {
+  const app = loadApp({ online: true });
+  setSession(app, "https://example.com/exec", "hash");
+  app.fetch = async () => ({
+    json: async () => ({ rows: [{ clientId: "cid-1", winLoss: "W" }] }),
+  });
+  const r = await app.verifyWrite("cid-1");
+  assert.equal(r.ok, true);
+});
+
+test("verifyWrite: returns truncated when the row is present but winLoss blank", async () => {
+  const app = loadApp({ online: true });
+  setSession(app, "https://example.com/exec", "hash");
+  app.fetch = async () => ({
+    json: async () => ({ rows: [{ clientId: "cid-1", winLoss: "" }] }),
+  });
+  const r = await app.verifyWrite("cid-1");
+  assert.equal(r.ok, false);
+  assert.equal(r.truncated, true);
+});
+
+test("verifyWrite: returns ok (best-effort) when the fetch fails", async () => {
+  const app = loadApp({ online: true });
+  setSession(app, "https://example.com/exec", "hash");
+  app.fetch = async () => { throw new Error("network"); };
+  const r = await app.verifyWrite("cid-1");
+  assert.equal(r.ok, true);
+  assert.equal(r.unverified, true);
+});

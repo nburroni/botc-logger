@@ -299,6 +299,28 @@ async function postPayload(payload) {
   }
 }
 
+// After a (possibly CORS-masked) submit, confirm the row actually landed
+// complete. GETs are readable even when POST responses are CORS-masked, so this
+// catches silent write failures (e.g. a value rejected by a column's
+// data-validation that truncated the row). Best-effort: if the check itself
+// can't run, assume ok rather than double-warning.
+async function verifyWrite(clientId) {
+  if (!clientId) return { ok: true, unverified: true };
+  try {
+    const url = ENDPOINT + "?key=" + encodeURIComponent(AUTH_HASH)
+              + "&action=history&limit=5&offset=0";
+    const resp = await fetch(url, { redirect: "follow" });
+    const data = await resp.json();
+    const rows = (data && data.rows) || [];
+    const mine = rows.find(r => r.clientId === clientId);
+    if (!mine) return { ok: false, missing: true };
+    if (!String(mine.winLoss || "").trim()) return { ok: false, truncated: true };
+    return { ok: true };
+  } catch (_e) {
+    return { ok: true, unverified: true };
+  }
+}
+
 async function queueAttempt(payload) {
   // Log the exact game data being POSTed (key redacted). This runs on direct
   // submits AND every queue retry, so the log shows precisely which fields left
@@ -1415,14 +1437,19 @@ async function submitGame(e) {
     const result = await submitViaQueue(payload);
 
     if (result.synced) {
-      // Provisional success means the response wasn't readable (typically a
-      // CORS-masked redirect). Hedge the toast so the user knows to verify.
-      showToast(
-        result.provisional
-          ? "Game logged — please verify in sheet"
-          : "Game logged! (row " + result.row + ")",
-        "success"
-      );
+      const check = await verifyWrite(payload.clientId);
+      if (check.ok) {
+        showToast(
+          (result.provisional || check.unverified)
+            ? "Game logged — please verify in sheet"
+            : "Game logged! (row " + result.row + ")",
+          "success"
+        );
+      } else {
+        // Row missing or truncated — the write did not fully land.
+        dlog("submit:verify_failed", { clientId: payload.clientId, check });
+        showToast("Saved but may be incomplete — check sheet", "error");
+      }
       saveGameInfo();
       resetFormForNextGame();
       refreshPrefillButton();
