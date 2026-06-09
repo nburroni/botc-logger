@@ -1135,6 +1135,46 @@ const REQUIRED_FIELDS = [
   { id: "winLoss",      label: "Result" },
 ];
 
+// Fields whose value (when non-blank) must be a member of a known list, mapped
+// to the list that defines validity. Mirrors the sheet's per-column dropdowns:
+// writing a value outside the list would be rejected by the sheet, so we catch
+// it here with a clear message instead of letting it corrupt the write.
+// Blank is always valid (these fields are optional). Dynamic values seen in the
+// sheet are merged in so legitimately new entries aren't falsely rejected.
+function listFieldValidators() {
+  const roles      = mergeUnique(ALL_ROLES, DYNAMIC.roles);
+  const demons     = mergeUnique(ALL_DEMONS, DYNAMIC.demons);
+  const fabled     = mergeUnique(ALL_FABLED, DYNAMIC.fabled);
+  const lorics     = mergeUnique(ALL_LORICS, DYNAMIC.lorics);
+  const travellers = mergeUnique(ALL_ROLES, DYNAMIC.travellers);
+  return [
+    { id: "startingRole", label: "Starting Role", list: roles },
+    { id: "midGameRole",  label: "Mid Game Role", list: roles },
+    { id: "endingRole",   label: "Ending Role",   list: roles },
+    { id: "startDemon",   label: "Start Demon",   list: demons },
+    { id: "endDemon",     label: "End Demon",     list: demons },
+    { id: "fabled1",      label: "Fabled 1",      list: fabled },
+    { id: "fabled2",      label: "Fabled 2",      list: fabled },
+    { id: "fabled3",      label: "Fabled 3",      list: fabled },
+    { id: "loric1",       label: "Loric 1",       list: lorics },
+    { id: "loric2",       label: "Loric 2",       list: lorics },
+    { id: "traveller1",   label: "Traveller 1",   list: travellers },
+    { id: "traveller2",   label: "Traveller 2",   list: travellers },
+    { id: "traveller3",   label: "Traveller 3",   list: travellers },
+  ];
+}
+
+// Returns [{id,label}] for fields whose non-blank value isn't in its list.
+// Takes a plain values object (keyed by field id) so it is unit-testable.
+function invalidListFields(values) {
+  return listFieldValidators()
+    .filter(({ id, list }) => {
+      const v = (values[id] != null ? String(values[id]) : "").trim();
+      return v !== "" && !list.includes(v);
+    })
+    .map(({ id, label }) => ({ id, label }));
+}
+
 function validateForm() {
   return REQUIRED_FIELDS.filter(({ id }) => {
     const el = document.getElementById(id);
@@ -1250,6 +1290,31 @@ async function submitGame(e) {
   if (failures.length > 0) {
     failures.forEach(f => markInvalid(f.id));
     showToast("Required: " + failures.map(f => f.label).join(", "), "error");
+    return;
+  }
+
+  // Reject values outside the known role/demon/fabled/loric lists — these would
+  // be rejected by the sheet's column data-validation and otherwise corrupt the
+  // write. Built from the same id→value reads used for the payload below.
+  const listVals = {
+    startingRole: document.getElementById("startingRole").value.trim(),
+    midGameRole:  document.getElementById("midGameRole").value.trim(),
+    endingRole:   document.getElementById("endingRole").value.trim(),
+    startDemon:   document.getElementById("startDemon").value.trim(),
+    endDemon:     document.getElementById("endDemon").value.trim(),
+    fabled1:      document.getElementById("fabled1").value.trim(),
+    fabled2:      document.getElementById("fabled2").value.trim(),
+    fabled3:      document.getElementById("fabled3").value.trim(),
+    loric1:       document.getElementById("loric1").value.trim(),
+    loric2:       document.getElementById("loric2").value.trim(),
+    traveller1:   document.getElementById("traveller1").value.trim(),
+    traveller2:   document.getElementById("traveller2").value.trim(),
+    traveller3:   document.getElementById("traveller3").value.trim(),
+  };
+  const badList = invalidListFields(listVals);
+  if (badList.length > 0) {
+    badList.forEach(f => markInvalid(f.id));
+    showToast("Not a valid option: " + badList.map(f => f.label).join(", "), "error");
     return;
   }
 

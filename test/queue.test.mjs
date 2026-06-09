@@ -109,3 +109,36 @@ test("buildQueueCsv emits headers and values for every game field", () => {
   assert.match(csv, /Imp/);          // data row contains the value
   assert.match(csv, /Good/);
 });
+
+test("invalidListFields: flags a role not in the known list", () => {
+  const app = loadApp();
+  const bad = app.invalidListFields({
+    startingRole: "Empath", midGameRole: "g", endingRole: "",
+    startDemon: "Imp", endDemon: "Imp",
+    fabled1: "", fabled2: "", fabled3: "", loric1: "", loric2: "",
+    traveller1: "", traveller2: "", traveller3: "",
+  });
+  assert.equal(bad.some(f => f.id === "midGameRole"), true);
+});
+
+test("invalidListFields: blanks and known values pass", () => {
+  const app = loadApp();
+  const bad = app.invalidListFields({
+    startingRole: "Empath", midGameRole: "", endingRole: "",
+    startDemon: "Imp", endDemon: "Imp",
+    fabled1: "Djinn", fabled2: "", fabled3: "", loric1: "", loric2: "",
+    traveller1: "Apprentice", traveller2: "", traveller3: "",
+  });
+  assert.equal(bad.length, 0);
+});
+
+test("invalidListFields: flags an unknown demon", () => {
+  const app = loadApp();
+  const bad = app.invalidListFields({
+    startingRole: "Empath", midGameRole: "", endingRole: "",
+    startDemon: "Notademon", endDemon: "Imp",
+    fabled1: "", fabled2: "", fabled3: "", loric1: "", loric2: "",
+    traveller1: "", traveller2: "", traveller3: "",
+  });
+  assert.equal(bad.some(f => f.id === "startDemon"), true);
+});
