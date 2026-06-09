@@ -44,7 +44,7 @@ const ALL_LORICS = [
 // ——— CONFIG ———
 // Bump alongside CACHE_VERSION in sw.js on every release so the Diagnostics
 // panel shows which build is running and the user can confirm a force-update.
-const APP_VERSION = "v9 (2026-06-03)";
+const APP_VERSION = "v10 (2026-06-08)";
 const STORAGE_KEY = "botc_logger_endpoint";
 const AUTH_KEY = "botc_logger_auth";
 const GAME_INFO_KEY = "botc_logger_game_info";
@@ -296,6 +296,31 @@ async function postPayload(payload) {
     // error page. Row probably written; treat as provisional success.
     dlog("attempt:provisional_parse", { clientId: cid, script });
     return { ok: true, provisional: true, row: null };
+  }
+}
+
+// After a (possibly CORS-masked) submit, confirm the row actually landed
+// complete. GETs are readable even when POST responses are CORS-masked, so this
+// catches silent write failures (e.g. a value rejected by a column's
+// data-validation that truncated the row). Best-effort: if the check itself
+// can't run, assume ok rather than double-warning.
+async function verifyWrite(clientId) {
+  if (!clientId) return { ok: true, unverified: true };
+  try {
+    // limit=25 (not just the newest row): a queue drain can flush several games
+    // around the time of a direct submit, so the target row may not be the very
+    // newest. 25 covers any realistic interactive burst without over-fetching.
+    const url = ENDPOINT + "?key=" + encodeURIComponent(AUTH_HASH)
+              + "&action=history&limit=25&offset=0";
+    const resp = await fetch(url, { redirect: "follow" });
+    const data = await resp.json();
+    const rows = (data && data.rows) || [];
+    const mine = rows.find(r => r.clientId === clientId);
+    if (!mine) return { ok: false, missing: true };
+    if (!String(mine.winLoss || "").trim()) return { ok: false, truncated: true };
+    return { ok: true };
+  } catch (_e) {
+    return { ok: true, unverified: true };
   }
 }
 
@@ -1135,6 +1160,46 @@ const REQUIRED_FIELDS = [
   { id: "winLoss",      label: "Result" },
 ];
 
+// Fields whose value (when non-blank) must be a member of a known list, mapped
+// to the list that defines validity. Mirrors the sheet's per-column dropdowns:
+// writing a value outside the list would be rejected by the sheet, so we catch
+// it here with a clear message instead of letting it corrupt the write.
+// Blank is always valid (these fields are optional). Dynamic values seen in the
+// sheet are merged in so legitimately new entries aren't falsely rejected.
+function listFieldValidators() {
+  const roles      = mergeUnique(ALL_ROLES, DYNAMIC.roles);
+  const demons     = mergeUnique(ALL_DEMONS, DYNAMIC.demons);
+  const fabled     = mergeUnique(ALL_FABLED, DYNAMIC.fabled);
+  const lorics     = mergeUnique(ALL_LORICS, DYNAMIC.lorics);
+  const travellers = mergeUnique(ALL_ROLES, DYNAMIC.travellers);
+  return [
+    { id: "startingRole", label: "Starting Role", list: roles },
+    { id: "midGameRole",  label: "Mid Game Role", list: roles },
+    { id: "endingRole",   label: "Ending Role",   list: roles },
+    { id: "startDemon",   label: "Start Demon",   list: demons },
+    { id: "endDemon",     label: "End Demon",     list: demons },
+    { id: "fabled1",      label: "Fabled 1",      list: fabled },
+    { id: "fabled2",      label: "Fabled 2",      list: fabled },
+    { id: "fabled3",      label: "Fabled 3",      list: fabled },
+    { id: "loric1",       label: "Loric 1",       list: lorics },
+    { id: "loric2",       label: "Loric 2",       list: lorics },
+    { id: "traveller1",   label: "Traveller 1",   list: travellers },
+    { id: "traveller2",   label: "Traveller 2",   list: travellers },
+    { id: "traveller3",   label: "Traveller 3",   list: travellers },
+  ];
+}
+
+// Returns [{id,label}] for fields whose non-blank value isn't in its list.
+// Takes a plain values object (keyed by field id) so it is unit-testable.
+function invalidListFields(values) {
+  return listFieldValidators()
+    .filter(({ id, list }) => {
+      const v = (values[id] != null ? String(values[id]) : "").trim();
+      return v !== "" && !list.includes(v);
+    })
+    .map(({ id, label }) => ({ id, label }));
+}
+
 function validateForm() {
   return REQUIRED_FIELDS.filter(({ id }) => {
     const el = document.getElementById(id);
@@ -1162,6 +1227,11 @@ function toggleSection(name) {
 // ——— EDIT MODE ———
 // null = logging a new game; otherwise { rowNum } of the sheet row being edited.
 let EDITING = null;
+
+// Tracks the last set of off-list fields the user was warned about (comma-joined
+// sorted ids), so a deliberate resubmit of the same unusual values isn't blocked.
+// Reset to "" whenever a clean submit passes the list check.
+let _listWarnAcked = "";
 
 // Text/select inputs whose ids match history-row keys 1:1.
 const EDIT_TEXT_FIELDS = [
@@ -1253,6 +1323,38 @@ async function submitGame(e) {
     return;
   }
 
+  // Soft-warn (don't block) on values outside the known role/demon/fabled/loric
+  // lists. The backend self-heals the write now, so off-list values DO save
+  // correctly — but an off-list value is usually a typo (e.g. a stray "g" in
+  // Mid Game Role). So we warn once and let a second submit through. Legitimate
+  // unusual entries (e.g. "No Demon (Summoner)") are never permanently blocked.
+  const listVals = {
+    startingRole: document.getElementById("startingRole").value.trim(),
+    midGameRole:  document.getElementById("midGameRole").value.trim(),
+    endingRole:   document.getElementById("endingRole").value.trim(),
+    startDemon:   document.getElementById("startDemon").value.trim(),
+    endDemon:     document.getElementById("endDemon").value.trim(),
+    fabled1:      document.getElementById("fabled1").value.trim(),
+    fabled2:      document.getElementById("fabled2").value.trim(),
+    fabled3:      document.getElementById("fabled3").value.trim(),
+    loric1:       document.getElementById("loric1").value.trim(),
+    loric2:       document.getElementById("loric2").value.trim(),
+    traveller1:   document.getElementById("traveller1").value.trim(),
+    traveller2:   document.getElementById("traveller2").value.trim(),
+    traveller3:   document.getElementById("traveller3").value.trim(),
+  };
+  const badList = invalidListFields(listVals);
+  const badSig = badList.map(f => f.id).sort().join(",");
+  if (badList.length > 0 && badSig !== _listWarnAcked) {
+    // First time seeing this exact set of off-list fields — warn and wait for a
+    // second submit to confirm. Remembered so an intentional resubmit goes through.
+    badList.forEach(f => markInvalid(f.id));
+    _listWarnAcked = badSig;
+    showToast("Check spelling: " + badList.map(f => f.label).join(", ") + " — submit again to keep", "info");
+    return;
+  }
+  _listWarnAcked = "";
+
   const btn = document.getElementById("submitBtn");
   btn.classList.add("loading"); btn.disabled = true;
 
@@ -1338,14 +1440,19 @@ async function submitGame(e) {
     const result = await submitViaQueue(payload);
 
     if (result.synced) {
-      // Provisional success means the response wasn't readable (typically a
-      // CORS-masked redirect). Hedge the toast so the user knows to verify.
-      showToast(
-        result.provisional
-          ? "Game logged — please verify in sheet"
-          : "Game logged! (row " + result.row + ")",
-        "success"
-      );
+      const check = await verifyWrite(payload.clientId);
+      if (check.ok) {
+        showToast(
+          (result.provisional || check.unverified)
+            ? "Game logged — please verify in sheet"
+            : "Game logged! (row " + result.row + ")",
+          "success"
+        );
+      } else {
+        // Row missing or truncated — the write did not fully land.
+        dlog("submit:verify_failed", { clientId: payload.clientId, check });
+        showToast("Saved but may be incomplete — check sheet", "error");
+      }
       saveGameInfo();
       resetFormForNextGame();
       refreshPrefillButton();

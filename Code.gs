@@ -193,7 +193,7 @@ function doPost(e) {
         sheet.getRange(rowNum, COL.CLIENT_ID, 1, 1).getValues()[0][0] || ""
       ).trim();
       const updRow = buildRowFromBody(body, existingId);
-      sheet.getRange(rowNum, 1, 1, NUM_COLS).setValues([updRow]);
+      writeRow(sheet, rowNum, updRow);
       if (body.date) {
         sheet.getRange(rowNum, COL.DATE).setNumberFormat("d MMM yyyy");
       }
@@ -221,7 +221,7 @@ function doPost(e) {
     // Instead, find the last row that actually has a DATE value and write the
     // next row directly.
     const newRow = Math.max(lastDataRow + 1, 3); // data starts at row 3
-    sheet.getRange(newRow, 1, 1, NUM_COLS).setValues([row]);
+    writeRow(sheet, newRow, row);
 
     if (body.date) {
       sheet.getRange(newRow, COL.DATE).setNumberFormat("d MMM yyyy");
@@ -300,6 +300,22 @@ function findRowByClientId(sheet, clientId, lastDataRow) {
   return 0;
 }
 
+// Writes a full row, self-healing around cell data-validation. Apps Script's
+// setValues throws if any cell's value violates that cell's data-validation
+// rule (e.g. a role not in a dropdown's list), and the throw leaves the row
+// half-written. App-written data rows don't need per-cell dropdowns, so on a
+// validation error we clear validations on just that row and retry — the row
+// then always lands completely. Rows with all-valid values keep their dropdowns.
+function writeRow(sheet, rowNum, row) {
+  const target = sheet.getRange(rowNum, 1, 1, NUM_COLS);
+  try {
+    target.setValues([row]);
+  } catch (e) {
+    target.clearDataValidations();
+    target.setValues([row]);
+  }
+}
+
 // Builds the A–AN row array from a POST body. Shared by the append and update
 // paths in doPost so column mapping lives in exactly one place.
 function buildRowFromBody(body, clientId) {
@@ -357,6 +373,7 @@ function rowToHistoryEntry(row, rowNum) {
   }
   return {
     rowNum:         rowNum || 0,
+    clientId:       String(row[COL.CLIENT_ID - 1]       || ""),
     date:           dateStr,
     script:         String(row[COL.SCRIPT - 1]          || ""),
     startingRole:   String(row[COL.STARTING_ROLE - 1]   || ""),
