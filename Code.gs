@@ -300,20 +300,19 @@ function findRowByClientId(sheet, clientId, lastDataRow) {
   return 0;
 }
 
-// Writes a full row, self-healing around cell data-validation. Apps Script's
-// setValues throws if any cell's value violates that cell's data-validation
-// rule (e.g. a role not in a dropdown's list), and the throw leaves the row
-// half-written. App-written data rows don't need per-cell dropdowns, so on a
-// validation error we clear validations on just that row and retry — the row
-// then always lands completely. Rows with all-valid values keep their dropdowns.
+// Writes a full row past any cell data-validation on the target row.
 function writeRow(sheet, rowNum, row) {
   const target = sheet.getRange(rowNum, 1, 1, NUM_COLS);
-  try {
-    target.setValues([row]);
-  } catch (e) {
-    target.clearDataValidations();
-    target.setValues([row]);
-  }
+  // Clear cell data-validation on this row BEFORE writing. Apps Script does not
+  // throw from setValues() when a value violates a cell's validation — it defers
+  // the rejection to flush() (after this function returns), so a try/catch
+  // around setValues can never catch it and the row lands truncated. Clearing
+  // validation up front is the only reliable fix; verified empirically against
+  // the live runtime (a reject-on-invalid cell drops its value at flush unless
+  // validations are cleared first). App-written data rows don't need per-cell
+  // dropdowns; blank rows below keep theirs for manual entry.
+  target.clearDataValidations();
+  target.setValues([row]);
 }
 
 // Builds the A–AN row array from a POST body. Shared by the append and update
