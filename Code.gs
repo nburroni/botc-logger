@@ -300,19 +300,24 @@ function findRowByClientId(sheet, clientId, lastDataRow) {
   return 0;
 }
 
-// Writes a full row past any cell data-validation on the target row.
+// Writes a full row past any cell data-validation WHILE preserving each cell's
+// dropdown ("chip") so the rows still look and behave like the rest of the sheet.
+//
+// Why this dance: Apps Script does not throw from setValues() when a value
+// violates a cell's reject-on-invalid validation — it defers the rejection to
+// flush() (after this function returns), silently dropping the offending cell
+// and truncating the row. Clearing validation before the write fixes the
+// truncation but strips the dropdowns. So we snapshot the row's validation
+// rules, clear, write, then restore the exact rules. Re-applying a reject-rule
+// to a cell that already holds an off-list value does NOT re-reject (validation
+// fires on value-write, not on rule-application) — verified empirically against
+// the live runtime, so the value stays AND the chip comes back.
 function writeRow(sheet, rowNum, row) {
   const target = sheet.getRange(rowNum, 1, 1, NUM_COLS);
-  // Clear cell data-validation on this row BEFORE writing. Apps Script does not
-  // throw from setValues() when a value violates a cell's validation — it defers
-  // the rejection to flush() (after this function returns), so a try/catch
-  // around setValues can never catch it and the row lands truncated. Clearing
-  // validation up front is the only reliable fix; verified empirically against
-  // the live runtime (a reject-on-invalid cell drops its value at flush unless
-  // validations are cleared first). App-written data rows don't need per-cell
-  // dropdowns; blank rows below keep theirs for manual entry.
+  const rules = target.getDataValidations(); // 1×NUM_COLS array of rules (or null per cell)
   target.clearDataValidations();
   target.setValues([row]);
+  target.setDataValidations(rules);
 }
 
 // Builds the A–AN row array from a POST body. Shared by the append and update

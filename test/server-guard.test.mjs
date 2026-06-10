@@ -39,6 +39,8 @@ function makeSheet() {
     getRange: () => ({
       getValues: () => Array.from({ length: 50 }, () => [""]),
       setValues: (vals) => { writes.push(vals[0]); },
+      getDataValidations: () => [new Array(40).fill(null)],
+      setDataValidations: () => {},
       clearDataValidations: () => {},
       setNumberFormat: () => {},
     }),
@@ -133,6 +135,8 @@ function makeSheetWithRow(atRow, clientId) {
         return Array.from({ length: numR }, () => new Array(numC).fill(""));
       },
       setValues: (vals) => { writes.push({ row: r, vals: vals[0] }); },
+      getDataValidations: () => [new Array(40).fill(null)],
+      setDataValidations: () => {},
       clearDataValidations: () => {},
       setNumberFormat: () => {},
     }),
@@ -206,32 +210,39 @@ test("doPost update: preserves an empty clientId on a legacy row (AN blank)", ()
   assert.equal(sheet.writes[0].vals[39], ""); // AN stays blank, payload UUID ignored
 });
 
-// Stub whose setValues throws a validation-style error on first call, then
-// succeeds. Records clearDataValidations calls. Mirrors Apps Script's behaviour
-// when a cell's data-validation rejects a written value.
-//
-// IMPORTANT — real Apps Script behaviour (verified empirically against the live
-// runtime): setValues() does NOT throw synchronously when a value violates a
-// cell's data-validation. The rejection is deferred to flush() (after the call
-// returns), and the offending cell's value is silently dropped — leaving a
-// truncated row. The ONLY reliable fix is to clearDataValidations() on the row
-// BEFORE setValues. This stub models that: if validations were not cleared
-// before the write, any value in a "validated" column index is dropped (set to
-// "") to mimic the silent truncation; once cleared, the full row lands.
+// Models real Apps Script behaviour (verified empirically against the live
+// runtime):
+//   1. setValues() does NOT throw synchronously when a value violates a cell's
+//      reject-on-invalid validation — the rejection defers to flush() and the
+//      offending cell is silently dropped, truncating the row. So a value in a
+//      "validated" column only lands if validation was cleared before the write.
+//   2. clearDataValidations() removes the dropdown "chip"; the fix must restore
+//      it afterward via setDataValidations(savedRules).
+// The stub tracks: whether the row was cleared before the write (gates
+// truncation), what landed, and the validation rules currently on the row (so
+// tests can assert the dropdown chip is preserved after writeRow runs).
 function makeValidationStub(atRow, validatedCols = [9, 15]) { // J=idx9, P=idx15
-  const calls = { setValues: 0, clearDataValidations: 0, written: null, clearedBeforeWrite: false };
+  const calls = { setValues: 0, clearDataValidations: 0, setDataValidations: 0, written: null, clearedBeforeWrite: false };
   const maxRows = 50;
   const colA = Array.from({ length: maxRows }, () => [""]);
   colA[atRow - 1] = ["2026-05-01"];
+  // The row starts WITH dropdown rules on the validated columns (non-null), like
+  // a real sheet row. "RULE" is a sentinel standing in for a DataValidation.
+  let rowRules = new Array(40).fill(null);
+  validatedCols.forEach(i => { rowRules[i] = "RULE"; });
   let cleared = false;
   return {
     calls,
     getMaxRows: () => maxRows,
+    // Exposed so tests can inspect the row's validation rules after writeRow.
+    currentRules: () => rowRules,
     getRange: (r, c, numR, numC) => ({
       getValues: () => {
         if (c === 1 && numC === 1) return colA;
         return Array.from({ length: numR || 1 }, () => new Array(numC || 1).fill(""));
       },
+      getDataValidations: () => [rowRules.slice()],
+      setDataValidations: (grid) => { calls.setDataValidations++; rowRules = grid[0].slice(); },
       setValues: (vals) => {
         calls.setValues++;
         calls.clearedBeforeWrite = cleared;
@@ -242,13 +253,13 @@ function makeValidationStub(atRow, validatedCols = [9, 15]) { // J=idx9, P=idx15
         }
         calls.written = row;
       },
-      clearDataValidations: () => { calls.clearDataValidations++; cleared = true; },
+      clearDataValidations: () => { calls.clearDataValidations++; cleared = true; rowRules = new Array(40).fill(null); },
       setNumberFormat: () => {},
     }),
   };
 }
 
-test("writeRow: clears validations before writing so the full row lands", () => {
+test("writeRow: full row lands AND dropdown rules are preserved", () => {
   const gas = loadGas({ properties: { PASSWORD_HASH: "h" } });
   const sheet = makeValidationStub(5);
   const row = new Array(40).fill("");
@@ -256,9 +267,13 @@ test("writeRow: clears validations before writing so the full row lands", () => 
   gas.writeRow(sheet, 5, row);
   assert.equal(sheet.calls.clearDataValidations, 1);
   assert.equal(sheet.calls.clearedBeforeWrite, true);   // cleared BEFORE setValues
+  assert.equal(sheet.calls.setDataValidations, 1);      // rules restored after
   assert.equal(sheet.calls.written[9], "Drunk");        // validated col J landed
   assert.equal(sheet.calls.written[15], "Imp");         // validated col P landed
   assert.equal(sheet.calls.written[18], "W");           // col S landed
+  // The dropdown "chip" survives on the validated columns.
+  assert.equal(sheet.currentRules()[9], "RULE");
+  assert.equal(sheet.currentRules()[15], "RULE");
 });
 
 test("writeRow: without the clear, a validated-column value would be dropped (guards the regression)", () => {
@@ -272,7 +287,7 @@ test("writeRow: without the clear, a validated-column value would be dropped (gu
   assert.equal(sheet.calls.written[18], "W");  // S (unvalidated) survives
 });
 
-test("doPost append: a validation-rejecting row still lands fully (regression)", () => {
+test("doPost append: a validation-rejecting row lands fully with chips intact (regression)", () => {
   const sheet = makeValidationStub(4); // lastDataRow = 4, append targets row 5
   const gas = loadGas({ properties: { PASSWORD_HASH: "h" }, sheet });
   // midGameRole "g" (col J, idx9) is the kind of off-list value that triggered
@@ -282,9 +297,11 @@ test("doPost append: a validation-rejecting row still lands fully (regression)",
   assert.equal(body.success, true);
   assert.equal(sheet.calls.clearDataValidations, 1);
   assert.equal(sheet.calls.clearedBeforeWrite, true);
+  assert.equal(sheet.calls.setDataValidations, 1);  // dropdowns restored
   assert.equal(sheet.calls.written[9], "g");   // mid role landed (col J)
   assert.equal(sheet.calls.written[15], "Imp"); // start demon landed (col P)
   assert.equal(sheet.calls.written[18], "W");   // winLoss landed (col S)
+  assert.equal(sheet.currentRules()[9], "RULE"); // chip kept on J
 });
 
 test("rowToHistoryEntry: includes clientId from column AN", () => {
