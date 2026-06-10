@@ -39,6 +39,7 @@ function makeSheet() {
     getRange: () => ({
       getValues: () => Array.from({ length: 50 }, () => [""]),
       setValues: (vals) => { writes.push(vals[0]); },
+      clearDataValidations: () => {},
       setNumberFormat: () => {},
     }),
   };
@@ -132,6 +133,7 @@ function makeSheetWithRow(atRow, clientId) {
         return Array.from({ length: numR }, () => new Array(numC).fill(""));
       },
       setValues: (vals) => { writes.push({ row: r, vals: vals[0] }); },
+      clearDataValidations: () => {},
       setNumberFormat: () => {},
     }),
   };
@@ -207,11 +209,21 @@ test("doPost update: preserves an empty clientId on a legacy row (AN blank)", ()
 // Stub whose setValues throws a validation-style error on first call, then
 // succeeds. Records clearDataValidations calls. Mirrors Apps Script's behaviour
 // when a cell's data-validation rejects a written value.
-function makeValidationStub(atRow) {
-  const calls = { setValues: 0, clearDataValidations: 0, written: null };
+//
+// IMPORTANT — real Apps Script behaviour (verified empirically against the live
+// runtime): setValues() does NOT throw synchronously when a value violates a
+// cell's data-validation. The rejection is deferred to flush() (after the call
+// returns), and the offending cell's value is silently dropped — leaving a
+// truncated row. The ONLY reliable fix is to clearDataValidations() on the row
+// BEFORE setValues. This stub models that: if validations were not cleared
+// before the write, any value in a "validated" column index is dropped (set to
+// "") to mimic the silent truncation; once cleared, the full row lands.
+function makeValidationStub(atRow, validatedCols = [9, 15]) { // J=idx9, P=idx15
+  const calls = { setValues: 0, clearDataValidations: 0, written: null, clearedBeforeWrite: false };
   const maxRows = 50;
   const colA = Array.from({ length: maxRows }, () => [""]);
   colA[atRow - 1] = ["2026-05-01"];
+  let cleared = false;
   return {
     calls,
     getMaxRows: () => maxRows,
@@ -222,52 +234,57 @@ function makeValidationStub(atRow) {
       },
       setValues: (vals) => {
         calls.setValues++;
-        if (calls.setValues === 1 && (numC || 0) >= 40) {
-          throw new Error("The data you entered in cell J100 violates the data validation rules set on this cell.");
+        calls.clearedBeforeWrite = cleared;
+        const row = vals[0].slice();
+        if (!cleared && (numC || 0) >= 40) {
+          // Mimic flush-time silent truncation: drop values in validated columns.
+          validatedCols.forEach(i => { row[i] = ""; });
         }
-        calls.written = vals[0];
+        calls.written = row;
       },
-      clearDataValidations: () => { calls.clearDataValidations++; },
+      clearDataValidations: () => { calls.clearDataValidations++; cleared = true; },
       setNumberFormat: () => {},
     }),
   };
 }
 
-test("writeRow: retries after a validation rejection with validations cleared", () => {
+test("writeRow: clears validations before writing so the full row lands", () => {
   const gas = loadGas({ properties: { PASSWORD_HASH: "h" } });
   const sheet = makeValidationStub(5);
   const row = new Array(40).fill("");
-  row[0] = "2026-06-08"; row[18] = "W";
+  row[0] = "2026-06-08"; row[9] = "Drunk"; row[15] = "Imp"; row[18] = "W";
   gas.writeRow(sheet, 5, row);
-  assert.equal(sheet.calls.setValues, 2);
   assert.equal(sheet.calls.clearDataValidations, 1);
-  assert.equal(sheet.calls.written[18], "W");
+  assert.equal(sheet.calls.clearedBeforeWrite, true);   // cleared BEFORE setValues
+  assert.equal(sheet.calls.written[9], "Drunk");        // validated col J landed
+  assert.equal(sheet.calls.written[15], "Imp");         // validated col P landed
+  assert.equal(sheet.calls.written[18], "W");           // col S landed
 });
 
-test("writeRow: no clear when the first write succeeds", () => {
-  const gas = loadGas({ properties: { PASSWORD_HASH: "h" } });
-  const writes = [];
-  const sheet = {
-    getRange: () => ({
-      setValues: (vals) => writes.push(vals[0]),
-      clearDataValidations: () => { throw new Error("should not be called"); },
-      setNumberFormat: () => {},
-    }),
-  };
-  const row = new Array(40).fill(""); row[18] = "L";
-  gas.writeRow(sheet, 7, row);
-  assert.equal(writes.length, 1);
-  assert.equal(writes[0][18], "L");
+test("writeRow: without the clear, a validated-column value would be dropped (guards the regression)", () => {
+  // Demonstrates the stub models real truncation: a direct setValues (no clear)
+  // drops validated columns. This is what the OLD try/catch fix failed to prevent.
+  const sheet = makeValidationStub(5);
+  const target = sheet.getRange(5, 1, 1, 40);
+  const row = new Array(40).fill(""); row[9] = "Drunk"; row[18] = "W";
+  target.setValues([row]); // no clear first
+  assert.equal(sheet.calls.written[9], "");   // J dropped — the bug
+  assert.equal(sheet.calls.written[18], "W");  // S (unvalidated) survives
 });
 
 test("doPost append: a validation-rejecting row still lands fully (regression)", () => {
   const sheet = makeValidationStub(4); // lastDataRow = 4, append targets row 5
   const gas = loadGas({ properties: { PASSWORD_HASH: "h" }, sheet });
-  const payload = Object.assign({ key: "h", clientId: "cid-x" }, COMPLETE, { midGameRole: "g" });
+  // midGameRole "g" (col J, idx9) is the kind of off-list value that triggered
+  // the original silent truncation.
+  const payload = Object.assign({ key: "h", clientId: "cid-x" }, COMPLETE, { midGameRole: "g", startDemon: "Imp" });
   const body = JSON.parse(gas.doPost({ postData: { contents: JSON.stringify(payload) } })._s);
   assert.equal(body.success, true);
   assert.equal(sheet.calls.clearDataValidations, 1);
-  assert.equal(sheet.calls.written[18], "W");
+  assert.equal(sheet.calls.clearedBeforeWrite, true);
+  assert.equal(sheet.calls.written[9], "g");   // mid role landed (col J)
+  assert.equal(sheet.calls.written[15], "Imp"); // start demon landed (col P)
+  assert.equal(sheet.calls.written[18], "W");   // winLoss landed (col S)
 });
 
 test("rowToHistoryEntry: includes clientId from column AN", () => {
