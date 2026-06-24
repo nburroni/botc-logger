@@ -44,7 +44,7 @@ const ALL_LORICS = [
 // ——— CONFIG ———
 // Bump alongside CACHE_VERSION in sw.js on every release so the Diagnostics
 // panel shows which build is running and the user can confirm a force-update.
-const APP_VERSION = "v10 (2026-06-08)";
+const APP_VERSION = "v11 (2026-06-23)";
 const STORAGE_KEY = "botc_logger_endpoint";
 const AUTH_KEY = "botc_logger_auth";
 const GAME_INFO_KEY = "botc_logger_game_info";
@@ -97,9 +97,12 @@ document.addEventListener("DOMContentLoaded", () => {
       document.querySelectorAll(".autocomplete-list").forEach(l => l.classList.remove("show"));
   });
 
-  // Fix 1: propagate Starting Role to mid/end role fields when they are empty
-  // (Team propagation is handled in selectChip and selectAC via autoFillRoleFields)
-  document.getElementById("startingRole").addEventListener("input", () => autoFillRoleFields());
+  // Propagate Starting Role to empty mid/end role fields, but only once the
+  // value is COMMITTED — on "change" (blur / autocomplete pick), never on "input"
+  // (per-keystroke). Firing on input froze mid/end at the first character typed
+  // (e.g. "Gambler" → mid/end stuck at "G"), which then failed column validation.
+  // Selecting from autocomplete still propagates via selectAC.
+  document.getElementById("startingRole").addEventListener("change", () => autoFillRoleFields());
 });
 
 function mergeUnique(staticList, dynamicList) {
