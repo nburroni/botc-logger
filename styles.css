@@ -580,6 +580,16 @@ body.sheet-open { overflow: hidden; }
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .note-card-move { display: flex; flex-direction: column; gap: 4px; }
+
+/* Primary action on a card: show the note to a player. Deliberately louder than
+   the reorder arrows — it's what you reach for at the table, often in the dark. */
+.note-show-btn {
+  flex-shrink: 0; padding: 10px 14px;
+  background: rgba(255,255,255,0.16); border: 1px solid rgba(255,255,255,0.4);
+  color: #fff; border-radius: var(--radius-sm);
+  font-size: 13px; font-weight: 700; letter-spacing: 0.02em; cursor: pointer;
+}
+.note-show-btn:hover { background: rgba(255,255,255,0.28); }
 .note-move-btn {
   width: 30px; height: 24px; line-height: 1;
   background: rgba(0,0,0,0.25); border: 1px solid rgba(255,255,255,0.18);

@@ -125,7 +125,7 @@ function noteCardInner(n, i, total, preview) {
       `<div class="note-card-title">${escHtml(n.title || "Untitled")}</div>` +
       (preview ? `<div class="note-card-preview">${escHtml(preview)}</div>` : "") +
     `</div>` +
-    `<button type="button" class="note-move-btn" onclick="presentNote('${n.id}')" aria-label="Show full screen">&#10530;</button>` +
+    `<button type="button" class="note-show-btn" onclick="presentNote('${n.id}')" aria-label="Show full screen">Show</button>` +
     `<div class="note-card-move">` +
       `<button type="button" class="note-move-btn" onclick="moveNote('${n.id}',-1)" ${i === 0 ? "disabled" : ""} aria-label="Move up">&#9650;</button>` +
       `<button type="button" class="note-move-btn" onclick="moveNote('${n.id}',1)" ${i === total - 1 ? "disabled" : ""} aria-label="Move down">&#9660;</button>` +

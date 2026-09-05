@@ -12,6 +12,7 @@ A **Blood on the Clocktower game logger**: a static, installable PWA that POSTs 
 |---|---|
 | `index.html` | Markup: setup overlay, header, Log/Recent tabs, form, bottom sheets (queue, game detail, diagnostics). Inline `<script>` at the bottom registers the service worker. |
 | `app.js` | All client logic: auth, autocomplete, form submit, the offline **submit queue**, Recent Games view, Diagnostics panel, debug log. Classic script (not a module): top-level `function` declarations are globals; top-level `let`/`const` are lexical. |
+| `notes.js` | Notes tab: device-local notes (localStorage), colour palette, reorder/pin, and the full-screen "show a player" overlay. No network or sheet access. Second classic script, sharing `app.js`'s global scope. |
 | `styles.css` | All styling. Note: there is **no generic `.hidden { display:none }`** — each component needs its own `.X.hidden { display:none }` rule. |
 | `sw.js` | Service worker. `CACHE_VERSION` busts the cache. Navigation = network-first; same-origin static = stale-while-revalidate; Apps Script hosts = never cached. |
 | `Code.gs` | Google Apps Script backend (`doGet` for options/history via JSONP+JSON, `doPost` to append a row). Deployed separately (see below). |
@@ -31,7 +32,7 @@ After the first deploy, **never create a new deployment** — that mints a new U
 Any change to `Code.gs` requires a redeploy to take effect.
 
 ### Shipping frontend changes
-The PWA caches the shell. **Any change to `app.js` / `index.html` / `styles.css` / `sw.js` must bump the version**, or installed PWAs keep serving stale code:
+The PWA caches the shell. **Any change to `app.js` / `notes.js` / `index.html` / `styles.css` / `sw.js` must bump the version**, or installed PWAs keep serving stale code:
 ```
 make release V=vN   # rewrites CACHE_VERSION (sw.js) AND APP_VERSION (app.js) together
 ```
