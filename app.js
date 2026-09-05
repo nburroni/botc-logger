@@ -44,7 +44,7 @@ const ALL_LORICS = [
 // ——— CONFIG ———
 // Bump alongside CACHE_VERSION in sw.js on every release so the Diagnostics
 // panel shows which build is running and the user can confirm a force-update.
-const APP_VERSION = "v11 (2026-06-23)";
+const APP_VERSION = "v12 (2026-06-23)";
 const STORAGE_KEY = "botc_logger_endpoint";
 const AUTH_KEY = "botc_logger_auth";
 const GAME_INFO_KEY = "botc_logger_game_info";
@@ -1634,14 +1634,23 @@ let _recentHasMore = false;
 let _recentLoaded  = false; // true after first successful fetch
 let _recentLoading = false; // true while a fetch is in flight
 
+// Tab id → its button and its panel. Table-driven so adding a tab is one row
+// rather than another pair of .toggle() calls.
+const TABS = [
+  { id: "log",    btn: "tabLog",    panel: ".form-container" },
+  { id: "recent", btn: "tabRecent", panel: "#recentContainer" },
+  { id: "notes",  btn: "tabNotes",  panel: "#notesContainer" },
+];
+
 function switchTab(tab) {
   if (!ENDPOINT) return; // not yet connected; setup overlay covers the tab bar
   closeGameDetail();
-  document.getElementById("tabLog").classList.toggle("active",    tab === "log");
-  document.getElementById("tabRecent").classList.toggle("active", tab === "recent");
-  document.querySelector(".form-container").classList.toggle("hidden", tab === "recent");
-  document.getElementById("recentContainer").classList.toggle("hidden", tab !== "recent");
+  TABS.forEach(t => {
+    document.getElementById(t.btn).classList.toggle("active", t.id === tab);
+    document.querySelector(t.panel).classList.toggle("hidden", t.id !== tab);
+  });
   if (tab === "recent" && !_recentLoaded) loadRecentGames(0);
+  if (tab === "notes") renderNotes(); // defined in notes.js (shared global scope)
 }
 
 async function loadRecentGames(offset) {

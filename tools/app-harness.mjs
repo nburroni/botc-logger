@@ -11,6 +11,9 @@ import { randomUUID } from "node:crypto";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const APP_SRC = readFileSync(join(__dirname, "..", "app.js"), "utf8");
+// notes.js is a second classic script loaded alongside app.js in the browser, so
+// they share one global scope. Evaluate it in the same context to match production.
+const NOTES_SRC = readFileSync(join(__dirname, "..", "notes.js"), "utf8");
 
 // A fake DOM element that absorbs any UI calls app.js makes (showToast, etc.).
 function fakeEl() {
@@ -79,6 +82,7 @@ export function loadApp({ online = true } = {}) {
 
   vm.createContext(ctx);
   vm.runInContext(APP_SRC, ctx, { filename: "app.js" });
+  vm.runInContext(NOTES_SRC, ctx, { filename: "notes.js" });
   return ctx;
 }
 
