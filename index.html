@@ -45,6 +45,7 @@
 <div class="tab-bar">
   <button class="tab active" id="tabLog" onclick="switchTab('log')">Log Game</button>
   <button class="tab" id="tabRecent" onclick="switchTab('recent')">Recent</button>
+  <button class="tab" id="tabNotes" onclick="switchTab('notes')">Notes</button>
 </div>
 
 <!-- FORM -->
@@ -387,6 +388,12 @@
   <button type="button" class="load-more-btn hidden" id="loadMoreBtn" onclick="loadMoreGames()">Load more</button>
 </div>
 
+<!-- NOTES -->
+<div id="notesContainer" class="notes-container hidden">
+  <button type="button" class="note-new-btn" onclick="openNoteEditor()">+ New note</button>
+  <div id="notesList"></div>
+</div>
+
 <div class="toast" id="toast"></div>
 
     <div class="sheet-backdrop hidden" id="queueSheetBackdrop" onclick="closeQueueSheet()"></div>
@@ -445,7 +452,42 @@
     </div>
   </div>
 </div>
+<div class="sheet-backdrop hidden" id="noteEditBackdrop" onclick="closeNoteEditor()"></div>
+<div class="sheet hidden" id="noteEditSheet" role="dialog" aria-modal="true" aria-label="Edit note">
+  <div class="sheet-handle"></div>
+  <div class="sheet-header">
+    <h2 id="noteEditTitle">New note</h2>
+    <button type="button" class="sheet-close" onclick="closeNoteEditor()" aria-label="Close">&times;</button>
+  </div>
+  <div class="sheet-body">
+    <div class="field">
+      <label>Title</label>
+      <input type="text" id="noteTitleInput" placeholder="e.g. Drunk" autocomplete="off">
+    </div>
+    <div class="field">
+      <label>Message shown to the player</label>
+      <textarea id="noteBodyInput" rows="4" placeholder="e.g. You are the Drunk."></textarea>
+    </div>
+    <div class="field">
+      <label>Colour</label>
+      <div class="note-swatches" id="noteSwatches"></div>
+    </div>
+  </div>
+  <div class="sheet-footer">
+    <button type="button" class="note-save-btn" onclick="saveNote()">Save</button>
+    <div class="note-editor-actions">
+      <button type="button" class="note-secondary-btn" id="notePinBtn" onclick="pinNoteFromEditor()">Pin to top</button>
+      <button type="button" class="note-secondary-btn danger" id="noteDeleteBtn" onclick="deleteNoteFromEditor()">Delete</button>
+    </div>
+  </div>
+</div>
+
+<div class="note-present hidden" id="notePresent" onclick="closeNotePresent()">
+  <div class="note-present-text" id="notePresentText"></div>
+</div>
+
 <script src="app.js"></script>
+<script src="notes.js"></script>
     <script>
       if ("serviceWorker" in navigator) {
         window.addEventListener("load", async () => {

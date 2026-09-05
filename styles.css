@@ -555,3 +555,71 @@ body.sheet-open { overflow: hidden; }
 
 /* ——— MISC ——— */
 .no-games-msg { text-align: center; color: var(--text-muted); font-size: 14px; padding: 24px 0; }
+
+/* ——— NOTES ——— */
+.notes-container { max-width: 480px; margin: 0 auto; padding: 12px 16px; }
+.notes-container.hidden { display: none; }
+
+.note-new-btn {
+  width: 100%; padding: 12px; margin-bottom: 12px;
+  background: none; border: 1px dashed var(--border); border-radius: var(--radius-sm);
+  color: var(--accent); font-size: 14px; font-weight: 600; cursor: pointer;
+  transition: all 0.2s;
+}
+.note-new-btn:hover { border-color: var(--accent); background: var(--surface); }
+
+.note-card {
+  display: flex; align-items: center; gap: 10px;
+  border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 12px 14px; margin-bottom: 8px;
+}
+.note-card-main { flex: 1; min-width: 0; cursor: pointer; }
+.note-card-title { font-size: 15px; font-weight: 600; color: #fff; }
+.note-card-preview {
+  font-size: 12px; color: rgba(255,255,255,0.72); margin-top: 3px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.note-card-move { display: flex; flex-direction: column; gap: 4px; }
+.note-move-btn {
+  width: 30px; height: 24px; line-height: 1;
+  background: rgba(0,0,0,0.25); border: 1px solid rgba(255,255,255,0.18);
+  color: #fff; border-radius: 6px; font-size: 12px; cursor: pointer;
+}
+.note-move-btn:disabled { opacity: 0.3; cursor: default; }
+
+.note-swatches { display: flex; flex-wrap: wrap; gap: 8px; }
+.note-swatch {
+  width: 34px; height: 34px; border-radius: 50%;
+  border: 2px solid transparent; cursor: pointer;
+}
+.note-swatch.selected { border-color: #fff; box-shadow: 0 0 0 2px var(--accent); }
+
+.note-save-btn {
+  width: 100%; padding: 12px;
+  background: var(--accent); border: none; border-radius: var(--radius-sm);
+  color: #fff; font-weight: 600; font-size: 15px; cursor: pointer;
+}
+.note-editor-actions { display: flex; gap: 8px; margin-top: 8px; }
+.note-secondary-btn {
+  flex: 1; padding: 10px;
+  background: none; border: 1px solid var(--border); border-radius: var(--radius-sm);
+  color: var(--text-muted); font-size: 13px; cursor: pointer;
+}
+.note-secondary-btn:hover { border-color: var(--accent); color: var(--accent); }
+.note-secondary-btn.danger:hover { border-color: var(--evil); color: var(--evil); }
+.note-secondary-btn.hidden { display: none; }
+
+/* Present mode — sits above .sheet (z-index 201) so nothing leaks over it. */
+.note-present {
+  position: fixed; inset: 0; z-index: 400;
+  display: flex; align-items: center; justify-content: center;
+  padding: 6vw; text-align: center; cursor: pointer;
+}
+.note-present.hidden { display: none; }
+.note-present-text {
+  color: #fff; font-weight: 700; line-height: 1.25;
+  overflow-wrap: break-word; max-height: 100%; overflow-y: auto;
+}
+.note-present-text.xl { font-size: clamp(32px, 11vw, 92px); }
+.note-present-text.lg { font-size: clamp(24px, 7vw, 60px); }
+.note-present-text.md { font-size: clamp(18px, 4.5vw, 38px); }
