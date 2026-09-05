@@ -94,3 +94,129 @@ function notesSeedIfFirstRun() {
   notesWrite(seed);
   return seed;
 }
+
+// ——— NOTES UI ———
+// Module state: the id currently open in the editor ("" = creating a new note),
+// and the colour selected in the editor.
+let _noteEditId = "";
+let _noteEditColor = "slate";
+
+function renderNotes() {
+  const list = notesSeedIfFirstRun();
+  const el = document.getElementById("notesList");
+  if (!el) return;
+  if (list.length === 0) {
+    el.innerHTML = '<p class="no-games-msg">No notes yet. Tap "+ New note".</p>';
+    return;
+  }
+  el.innerHTML = list.map((n, i) => {
+    const preview = (n.body || "").replace(/\s+/g, " ").trim();
+    return `<div class="note-card" style="background:${noteColorBg(n.color)}">` +
+      noteCardInner(n, i, list.length, preview) +
+      `</div>`;
+  }).join("");
+}
+
+// Inner markup of one note card. Split out so renderNotes stays readable.
+// escHtml comes from app.js (same global scope in the browser).
+function noteCardInner(n, i, total, preview) {
+  return (
+    `<div class="note-card-main" onclick="openNoteEditor('${n.id}')">` +
+      `<div class="note-card-title">${escHtml(n.title || "Untitled")}</div>` +
+      (preview ? `<div class="note-card-preview">${escHtml(preview)}</div>` : "") +
+    `</div>` +
+    `<button type="button" class="note-move-btn" onclick="presentNote('${n.id}')" aria-label="Show full screen">&#10530;</button>` +
+    `<div class="note-card-move">` +
+      `<button type="button" class="note-move-btn" onclick="moveNote('${n.id}',-1)" ${i === 0 ? "disabled" : ""} aria-label="Move up">&#9650;</button>` +
+      `<button type="button" class="note-move-btn" onclick="moveNote('${n.id}',1)" ${i === total - 1 ? "disabled" : ""} aria-label="Move down">&#9660;</button>` +
+    `</div>`
+  );
+}
+
+function moveNote(id, dir) {
+  notesWrite(notesMove(notesRead(), id, dir));
+  renderNotes();
+}
+
+function openNoteEditor(id) {
+  const list = notesRead();
+  const note = id ? list.find(n => n.id === id) : null;
+  _noteEditId = note ? note.id : "";
+  _noteEditColor = note ? (note.color || "slate") : "slate";
+  document.getElementById("noteEditTitle").textContent = note ? "Edit note" : "New note";
+  document.getElementById("noteTitleInput").value = note ? (note.title || "") : "";
+  document.getElementById("noteBodyInput").value = note ? (note.body || "") : "";
+  // Pin/Delete only make sense for an existing note.
+  document.getElementById("notePinBtn").classList.toggle("hidden", !note);
+  document.getElementById("noteDeleteBtn").classList.toggle("hidden", !note);
+  renderNoteSwatches();
+  lockBodyScroll("noteEdit", true);
+  document.getElementById("noteEditSheet").classList.remove("hidden");
+  document.getElementById("noteEditBackdrop").classList.remove("hidden");
+}
+
+function renderNoteSwatches() {
+  document.getElementById("noteSwatches").innerHTML = NOTE_COLORS.map(c =>
+    `<div class="note-swatch${c.key === _noteEditColor ? " selected" : ""}" ` +
+    `style="background:${c.bg}" title="${c.label}" onclick="pickNoteColor('${c.key}')"></div>`
+  ).join("");
+}
+
+function pickNoteColor(key) {
+  _noteEditColor = key;
+  renderNoteSwatches();
+}
+
+function closeNoteEditor() {
+  lockBodyScroll("noteEdit", false);
+  document.getElementById("noteEditSheet").classList.add("hidden");
+  document.getElementById("noteEditBackdrop").classList.add("hidden");
+}
+
+function saveNote() {
+  const title = document.getElementById("noteTitleInput").value.trim();
+  const body = document.getElementById("noteBodyInput").value.trim();
+  if (!title && !body) { closeNoteEditor(); return; } // nothing to save
+  const list = notesRead();
+  if (_noteEditId) {
+    const i = list.findIndex(n => n.id === _noteEditId);
+    if (i !== -1) list[i] = { ...list[i], title, body, color: _noteEditColor };
+  } else {
+    list.push({ id: noteNewId(), title, body, color: _noteEditColor });
+  }
+  notesWrite(list);
+  closeNoteEditor();
+  renderNotes();
+}
+
+function deleteNoteFromEditor() {
+  if (!_noteEditId) return;
+  notesWrite(notesRead().filter(n => n.id !== _noteEditId));
+  closeNoteEditor();
+  renderNotes();
+}
+
+function pinNoteFromEditor() {
+  if (!_noteEditId) return;
+  notesWrite(notesPinTop(notesRead(), _noteEditId));
+  closeNoteEditor();
+  renderNotes();
+}
+
+// Full-screen takeover: the player sees ONLY this note's body on its colour.
+function presentNote(id) {
+  const note = notesRead().find(n => n.id === id);
+  if (!note) return;
+  const el = document.getElementById("notePresent");
+  const text = document.getElementById("notePresentText");
+  text.className = "note-present-text " + noteSizeClass(note.body);
+  text.textContent = note.body || "";
+  el.style.background = noteColorBg(note.color);
+  lockBodyScroll("notePresent", true);
+  el.classList.remove("hidden");
+}
+
+function closeNotePresent() {
+  lockBodyScroll("notePresent", false);
+  document.getElementById("notePresent").classList.add("hidden");
+}
